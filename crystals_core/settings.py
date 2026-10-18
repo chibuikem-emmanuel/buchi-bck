@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 import os
 import dj_database_url
 from pathlib import Path
+from datetime import timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -165,6 +166,16 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 
+
+
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),      # Extend access token validity (e.g., 1 day)
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),     # Refresh token validity
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATING': True,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+}
 
 
 # REST Framework & JWT Configuration
