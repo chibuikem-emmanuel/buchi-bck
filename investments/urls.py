@@ -6,6 +6,7 @@ from .admin_views import (
     AdminTransactionListView,
     AdminWithdrawalListView,
     AdminProcessWithdrawalView,
+    AdminSystemSettingsView,
 )
 from .views import (
     InvestmentPlanListView,
@@ -26,4 +27,5 @@ urlpatterns = [
     path('admin/transactions/', AdminTransactionListView.as_view(), name='admin-transactions'),
     path('admin/withdrawals/pending/', AdminWithdrawalListView.as_view(), name='admin-withdrawals'),
     path('admin/withdrawals/<int:pk>/process/', AdminProcessWithdrawalView.as_view(), name='admin-process-withdrawal'),
+    path('admin/settings/', AdminSystemSettingsView.as_view(), name='admin-system-settings'),
 ]

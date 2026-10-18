@@ -1,7 +1,7 @@
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
-from .models import Transaction, WithdrawalRequest
+from .models import Transaction, WithdrawalRequest, SystemSetting
 from decimal import Decimal
 
 User = get_user_model()
@@ -121,3 +121,30 @@ class AdminProcessWithdrawalView(generics.GenericAPIView):
             return Response({'message': f'Withdrawal successfully {action}d'})
         except WithdrawalRequest.DoesNotExist:
             return Response({'error': 'Withdrawal request not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+
+
+
+
+class AdminSystemSettingsView(generics.GenericAPIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, *args, **kwargs):
+        setting, _ = SystemSetting.objects.get_or_create(
+            id=1, 
+            defaults={"platform_name": "Crystals Investments"}
+        )
+        return Response({"platform_name": setting.platform_name})
+
+    def put(self, request, *args, **kwargs):
+        setting, _ = SystemSetting.objects.get_or_create(
+            id=1, 
+            defaults={"platform_name": "Crystals Investments"}
+        )
+        platform_name = request.data.get('platform_name')
+        if platform_name:
+            setting.platform_name = platform_name
+            setting.save()
+            return Response({"success": True, "message": "System settings updated successfully", "platform_name": setting.platform_name})
+        return Response({"error": "platform_name is required"}, status=status.HTTP_400_BAD_REQUEST)
