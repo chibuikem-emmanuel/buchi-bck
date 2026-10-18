@@ -1,30 +1,29 @@
 from django.urls import path
 from .admin_views import (
-    AdminUserListView, 
-    AdminUserDetailView, 
-    AdminCreditUserBalanceView, 
-    AdminTransactionListView, 
-    AdminWithdrawalListView, 
-    AdminProcessWithdrawalView
+    AdminUserListView,
+    AdminUserDetailView,
+    AdminCreditUserBalanceView,
+    AdminTransactionListView,
+    AdminWithdrawalListView,
+    AdminProcessWithdrawalView,
+)
+from .views import (
+    InvestmentPlanListView,
+    UserDepositCreateView,
+    UserWithdrawalCreateView,
 )
 
 urlpatterns = [
+    # User-facing endpoints
+    path('plans/', InvestmentPlanListView.as_view(), name='investment-plans'),
+    path('deposit/', UserDepositCreateView.as_view(), name='user-deposit'),
+    path('withdraw/', UserWithdrawalCreateView.as_view(), name='user-withdraw'),
+
+    # Admin endpoints
     path('admin/users/', AdminUserListView.as_view(), name='admin-user-list'),
     path('admin/users/<int:pk>/', AdminUserDetailView.as_view(), name='admin-user-detail'),
     path('admin/credit-user/', AdminCreditUserBalanceView.as_view(), name='admin-credit-user'),
     path('admin/transactions/', AdminTransactionListView.as_view(), name='admin-transactions'),
     path('admin/withdrawals/pending/', AdminWithdrawalListView.as_view(), name='admin-withdrawals'),
     path('admin/withdrawals/<int:pk>/process/', AdminProcessWithdrawalView.as_view(), name='admin-process-withdrawal'),
-
-
-
-    # Admin User Management Routes
-    path('admin/users/', AdminUserListView.as_view(), name='admin-user-list'),
-    path('admin/users/<int:pk>/', AdminUserDetailView.as_view(), name='admin-user-detail'),
-    path('admin/credit-user/', AdminCreditUserBalanceView.as_view(), name='admin-credit-user'),
-    
-    # Admin Withdrawal Management Routes
-    path('admin/withdrawals/pending/', AdminWithdrawalListView.as_view(), name='admin-withdrawal-list'),
-    path('admin/withdrawals/<int:pk>/process/', AdminProcessWithdrawalView.as_view(), name='admin-process-withdrawal'),
-
 ]
