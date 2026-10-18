@@ -1,5 +1,5 @@
 from rest_framework import generics, permissions, serializers
-from .models import InvestmentPlan, UserInvestment, Transaction
+from .models import InvestmentPlan, UserInvestment, Transaction, WithdrawalRequest
 from .serializers import InvestmentPlanSerializer, UserInvestmentSerializer, TransactionSerializer
 from datetime import timedelta
 from django.utils import timezone
@@ -79,24 +79,27 @@ class UserWithdrawalCreateView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        amount = float(request.data.get('amount', 0))
+        try:
+            amount = float(request.data.get('amount', 0))
+            method = request.data.get('method', 'USDT TRC20')
+        except (ValueError, TypeError):
+            return Response({"error": "Invalid amount"}, status=status.HTTP_400_BAD_REQUEST)
+
         if amount <= 0:
-            return Response({'error': 'Invalid amount'}, status=status.HTTP_400_BAD_REQUEST)
-            
-        if request.user.balance < amount:
-            return Response({'error': 'Insufficient account balance'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Amount must be greater than zero"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Deduct balance temporarily or queue pending request
-        request.user.balance -= amount
-        request.user.save()
+        if getattr(request.user, 'balance', 0) < amount:
+            return Response({"error": "Insufficient account balance"}, status=status.HTTP_400_BAD_REQUEST)
 
-        txn = Transaction.objects.create(
+        # Deduct balance or queue pending withdrawal
+        WithdrawalRequest.objects.create(
             user=request.user,
-            transaction_type='WITHDRAWAL',
             amount=amount,
+            method=method,
             status='PENDING'
         )
-        return Response({'success': True, 'message': 'Withdrawal request submitted', 'transaction_id': txn.id})
+
+        return Response({"success": True, "message": "Withdrawal request submitted successfully!"})
 
 
 
