@@ -75,6 +75,16 @@ class WithdrawalRequest(models.Model):
 
 class SystemSetting(models.Model):
     platform_name = models.CharField(max_length=100, default='Crystals Investments')
-    
+
+    def save(self, *args, **kwargs):
+        # Force the ID to always be 1 (Singleton pattern)
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1, defaults={'platform_name': 'Crystals Investments'})
+        return obj
+
     def __str__(self):
         return self.platform_name
