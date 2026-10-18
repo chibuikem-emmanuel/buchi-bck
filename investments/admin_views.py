@@ -126,25 +126,33 @@ class AdminProcessWithdrawalView(generics.GenericAPIView):
 
 
 
-
 class AdminSystemSettingsView(generics.GenericAPIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request, *args, **kwargs):
-        setting, _ = SystemSetting.objects.get_or_create(
-            id=1, 
-            defaults={"platform_name": "Crystals Investments"}
-        )
+        setting = SystemSetting.load()
         return Response({"platform_name": setting.platform_name})
 
     def put(self, request, *args, **kwargs):
-        setting, _ = SystemSetting.objects.get_or_create(
-            id=1, 
-            defaults={"platform_name": "Crystals Investments"}
-        )
+        return self.update_settings(request)
+
+    def patch(self, request, *args, **kwargs):
+        return self.update_settings(request)
+
+    def update_settings(self, request):
+        setting = SystemSetting.load()
         platform_name = request.data.get('platform_name')
+        
         if platform_name:
-            setting.platform_name = platform_name
+            setting.platform_name = platform_name.strip()
             setting.save()
-            return Response({"success": True, "message": "System settings updated successfully", "platform_name": setting.platform_name})
-        return Response({"error": "platform_name is required"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                "success": True, 
+                "message": "System settings updated successfully", 
+                "platform_name": setting.platform_name
+            }, status=status.HTTP_200_OK)
+            
+        return Response(
+            {"error": "platform_name field is required"}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
