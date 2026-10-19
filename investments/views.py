@@ -3,6 +3,7 @@ from .models import InvestmentPlan, UserInvestment, Transaction, WithdrawalReque
 from .serializers import InvestmentPlanSerializer, UserInvestmentSerializer, TransactionSerializer
 from datetime import timedelta
 from django.utils import timezone
+from rest_framework.views import APIView
 
 from decimal import Decimal
 from rest_framework import generics, permissions, status
@@ -226,3 +227,48 @@ class UserWithdrawalCreateView(generics.GenericAPIView):
             return Response({'success': True, 'message': 'Withdrawal request submitted'})
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
+
+
+class UserTransactionListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        # Fetch transactions for the authenticated user only
+        transactions = Transaction.objects.filter(user=request.user).order_by('-created_at')
+        
+        data = []
+        for tx in transactions:
+            data.append({
+                'id': tx.id,
+                'type': tx.transaction_type,
+                'amount': float(tx.amount),
+                'status': tx.status,
+                'method': tx.payment_method or 'USDT TRC20',
+                'date': tx.created_at.strftime("%b-%d-%Y %I:%M %p") if tx.created_at else ''
+            })
+            
+        return Response(data, status=status.HTTP_200_OK)
+
+class UserTransactionListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        # Fetch transactions for the authenticated user only
+        transactions = Transaction.objects.filter(user=request.user).order_by('-created_at')
+        
+        data = []
+        for tx in transactions:
+            data.append({
+                'id': tx.id,
+                'type': tx.transaction_type,
+                'amount': float(tx.amount),
+                'status': tx.status,
+                'method': tx.payment_method or 'USDT TRC20',
+                'date': tx.created_at.strftime("%b-%d-%Y %I:%M %p") if tx.created_at else ''
+            })
+            
+        return Response(data, status=status.HTTP_200_OK)

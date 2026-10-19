@@ -12,6 +12,7 @@ from .views import (
     InvestmentPlanListView,
     UserDepositCreateView,
     UserWithdrawalCreateView,
+    UserTransactionListView
 )
 
 urlpatterns = [
@@ -19,6 +20,7 @@ urlpatterns = [
     path('plans/', InvestmentPlanListView.as_view(), name='investment-plans'),
     path('deposit/', UserDepositCreateView.as_view(), name='user-deposit'),
     path('withdraw/', UserWithdrawalCreateView.as_view(), name='user-withdraw'),
+    path('transactions/', UserTransactionListView.as_view(), name='user-transactions'),
 
     # Admin endpoints
     path('admin/users/', AdminUserListView.as_view(), name='admin-user-list'),
