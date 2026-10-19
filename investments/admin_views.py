@@ -3,6 +3,11 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from .models import Transaction, WithdrawalRequest, SystemSetting
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+# Assuming you have models named InvestmentPlan and UserDeposit/Deposit defined:
+from .models import InvestmentPlan, UserDeposit
 from decimal import Decimal
 
 User = get_user_model()
@@ -245,3 +250,83 @@ class AdminProcessingsView(APIView):
     def put(self, request, pk=None, *args, **kwargs):
         # Update specific processing settings
         return Response({"success": True, "message": "Processing gateway settings updated successfully!"})
+
+
+
+
+
+
+class AdminInvestmentPlanListView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request, format=None):
+        # Fetch all investment plans or return mock structure matching your frontend
+        plans = [
+            {
+                "id": 1,
+                "name": "BASIC PLAN",
+                "min_amount": "100.00",
+                "max_amount": "4999.00",
+                "profit_percent": "4.00",
+                "duration_days": "3",
+                "status": "Active",
+                "total_count": 159,
+                "total_amount": "71120.28",
+                "active_count": 1,
+                "active_amount": "670.00"
+            },
+            {
+                "id": 2,
+                "name": "EXPERT PLAN",
+                "min_amount": "5000.00",
+                "max_amount": "19999.00",
+                "profit_percent": "6.00",
+                "duration_days": "5",
+                "status": "Active",
+                "total_count": 33,
+                "total_amount": "210799.38",
+                "active_count": 0,
+                "active_amount": "0.00"
+            }
+        ]
+        return Response(plans, status=status.HTTP_200_OK)
+
+    def post(self, request, format=None):
+        # Handle creating a new investment plan
+        name = request.data.get('name')
+        min_amount = request.data.get('min_amount')
+        max_amount = request.data.get('max_amount')
+        profit_percent = request.data.get('profit_percent')
+        duration_days = request.data.get('duration_days')
+        
+        # Save logic here...
+        
+        return Response({"success": True, "message": "Investment plan created successfully!"}, status=status.HTTP_201_CREATED)
+
+
+class AdminInvestmentPlanDetailView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def put(self, request, pk, format=None):
+        # Update investment plan logic by pk
+        return Response({"success": True, "message": f"Investment plan {pk} updated successfully!"}, status=status.HTTP_200_OK)
+
+    def delete(self, request, pk, format=None):
+        # Delete investment plan logic by pk
+        return Response({"success": True, "message": f"Investment plan {pk} deleted successfully!"}, status=status.HTTP_200_OK)
+
+
+class AdminExpiringDepositsView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request, format=None):
+        expiring = [
+            {
+                "id": 1,
+                "username": "K38kamran",
+                "plan_name": "BASIC PLAN",
+                "amount": "670.00",
+                "expires_at": "Oct-15-2026 12:00:00 PM"
+            }
+        ]
+        return Response(expiring, status=status.HTTP_200_OK)

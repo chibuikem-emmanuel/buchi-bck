@@ -1,5 +1,8 @@
 from django.urls import path
 from .admin_views import (
+    AdminExpiringDepositsView,
+    AdminInvestmentPlanDetailView,
+    AdminInvestmentPlanListView,
     AdminUserListView,
     AdminUserDetailView,
     AdminCreditUserBalanceView,
@@ -22,6 +25,10 @@ urlpatterns = [
     path('deposit/', UserDepositCreateView.as_view(), name='user-deposit'),
     path('withdraw/', UserWithdrawalCreateView.as_view(), name='user-withdraw'),
     path('transactions/', UserTransactionListView.as_view(), name='user-transactions'),
+
+    path('api/admin/investment-plans/', AdminInvestmentPlanListView.as_view()),
+    path('api/admin/investment-plans/<int:pk>/', AdminInvestmentPlanDetailView.as_view()),
+    path('api/admin/expiring-deposits/', AdminExpiringDepositsView.as_view()),
 
     # Admin endpoints
     path('admin/users/', AdminUserListView.as_view(), name='admin-user-list'),
