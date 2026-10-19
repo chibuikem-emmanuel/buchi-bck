@@ -31,17 +31,59 @@ class AdminUserListView(generics.ListAPIView):
         } for u in queryset]
         return Response(data)
 
-class AdminUserDetailView(generics.UpdateAPIView):
-    queryset = User.objects.all()
+class AdminUserDetailView(APIView):
     permission_classes = [IsAdminUser]
 
-    def patch(self, request, *args, **kwargs):
-        user = self.get_object()
-        is_blacklisted = request.data.get('is_blacklisted')
-        if is_blacklisted is not None:
-            user.is_blacklisted = is_blacklisted
+    def patch(self, request, pk, *args, **kwargs):
+        try:
+            user = User.objects.get(id=pk)
+            data = request.data
+
+            # Update core user details
+            if 'full_name' in data:
+                user.full_name = data['full_name']
+            if 'username' in data and data['username']:
+                user.username = data['username']
+            if 'email' in data and data['email']:
+                user.email = data['email']
+            if 'status' in data:
+                user.is_blacklisted = (data['status'] == 'Disabled')
+
+            # Update password if provided
+            if data.get('password'):
+                user.set_password(data['password'])
+
+            # Update crypto wallet addresses
+            if 'btc_address' in data:
+                user.btc_address = data['btc_address']
+            if 'usdt_trc20' in data:
+                user.usdt_trc20 = data['usdt_trc20']
+            if 'usdt_erc20' in data:
+                user.usdt_erc20 = data['usdt_erc20']
+            if 'eth_address' in data:
+                user.eth_address = data['eth_address']
+            if 'bnb_address' in data:
+                user.bnb_address = data['bnb_address']
+            if 'admin_note' in data:
+                user.admin_note = data['admin_note']
+
             user.save()
-        return Response({'success': True, 'message': 'User status updated successfully'})
+
+            return Response({
+                "success": True, 
+                "message": f"User {user.username} updated successfully!",
+                "user": {
+                    "id": user.id,
+                    "username": user.username,
+                    "email": user.email,
+                    "full_name": getattr(user, 'full_name', ''),
+                    "is_blacklisted": user.is_blacklisted,
+                    "balance": float(getattr(user, 'balance', 0))
+                }
+            }, status=status.HTTP_200_OK)
+
+        except User.DoesNotExist:
+            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
 class AdminCreditUserBalanceView(generics.GenericAPIView):
     permission_classes = [IsAdminUser]
