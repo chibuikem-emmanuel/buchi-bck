@@ -87,6 +87,8 @@ class UserDepositCreateView(generics.GenericAPIView):
             "transaction_id": tx.id
         })
 
+# crystals_core/investments/views.py
+
 class UserWithdrawalCreateView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -100,19 +102,15 @@ class UserWithdrawalCreateView(generics.GenericAPIView):
         if amount <= 0:
             return Response({"error": "Amount must be greater than zero"}, status=status.HTTP_400_BAD_REQUEST)
 
-        user_balance = float(getattr(request.user, 'balance', 0))
-        if user_balance < amount:
-            return Response({"error": "Insufficient account balance"}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Create pending withdrawal request for admin dashboard
+        # 1. Create the Pending Withdrawal Request for the Admin Dashboard
         withdrawal = WithdrawalRequest.objects.create(
             user=request.user,
             amount=amount,
             method=method,
-            status='PENDING'
+            status='PENDING' # MUST BE EXACTLY UPPERCASE 'PENDING'
         )
 
-        # Log associated transaction record
+        # 2. Also log the Transaction record
         Transaction.objects.create(
             user=request.user,
             transaction_type='WITHDRAWAL',

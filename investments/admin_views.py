@@ -87,11 +87,14 @@ class AdminTransactionListView(generics.ListAPIView):
         } for t in queryset]
         return Response(data)
 
+# crystals_core/investments/admin_views.py
+
 class AdminWithdrawalListView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request, *args, **kwargs):
-        withdrawals = WithdrawalRequest.objects.filter(status='PENDING').order_by('-created_at')
+        # iexact handles 'PENDING', 'Pending', or 'pending'
+        withdrawals = WithdrawalRequest.objects.filter(status__iexact='PENDING').order_by('-created_at')
         
         data = []
         for w in withdrawals:
