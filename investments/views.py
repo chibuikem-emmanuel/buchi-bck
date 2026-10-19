@@ -63,17 +63,29 @@ class UserDepositCreateView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        amount = request.data.get('amount')
-        if not amount:
-            return Response({'error': 'Amount is required'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        txn = Transaction.objects.create(
+        try:
+            amount = float(request.data.get('amount', 0))
+            method = request.data.get('method', 'USDT TRC20')
+        except (ValueError, TypeError):
+            return Response({"error": "Invalid deposit amount"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if amount <= 0:
+            return Response({"error": "Amount must be greater than zero"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Log pending transaction for admin review
+        tx = Transaction.objects.create(
             user=request.user,
             transaction_type='DEPOSIT',
             amount=amount,
+            payment_method=method,
             status='PENDING'
         )
-        return Response({'success': True, 'message': 'Deposit requested successfully', 'transaction_id': txn.id})
+
+        return Response({
+            "success": True, 
+            "message": f"Deposit request of ${amount:.2f} submitted! Awaiting admin confirmation.",
+            "transaction_id": tx.id
+        })
 
 class UserWithdrawalCreateView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -83,23 +95,37 @@ class UserWithdrawalCreateView(generics.GenericAPIView):
             amount = float(request.data.get('amount', 0))
             method = request.data.get('method', 'USDT TRC20')
         except (ValueError, TypeError):
-            return Response({"error": "Invalid amount"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Invalid withdrawal amount"}, status=status.HTTP_400_BAD_REQUEST)
 
         if amount <= 0:
             return Response({"error": "Amount must be greater than zero"}, status=status.HTTP_400_BAD_REQUEST)
 
-        if getattr(request.user, 'balance', 0) < amount:
+        user_balance = float(getattr(request.user, 'balance', 0))
+        if user_balance < amount:
             return Response({"error": "Insufficient account balance"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Deduct balance or queue pending withdrawal
-        WithdrawalRequest.objects.create(
+        # Create pending withdrawal request for admin dashboard
+        withdrawal = WithdrawalRequest.objects.create(
             user=request.user,
             amount=amount,
             method=method,
             status='PENDING'
         )
 
-        return Response({"success": True, "message": "Withdrawal request submitted successfully!"})
+        # Log associated transaction record
+        Transaction.objects.create(
+            user=request.user,
+            transaction_type='WITHDRAWAL',
+            amount=amount,
+            payment_method=method,
+            status='PENDING'
+        )
+
+        return Response({
+            "success": True, 
+            "message": f"Withdrawal request of ${amount:.2f} submitted successfully!",
+            "withdrawal_id": withdrawal.id
+        })
 
 
 

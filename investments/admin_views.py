@@ -108,16 +108,33 @@ class AdminProcessWithdrawalView(generics.GenericAPIView):
     def post(self, request, *args, **kwargs):
         withdrawal_id = kwargs.get('pk')
         action = request.data.get('action') # 'approve' or 'reject'
+
         try:
             withdrawal = WithdrawalRequest.objects.get(id=withdrawal_id)
+            user = withdrawal.user
+
             if action == 'approve':
                 withdrawal.status = 'APPROVED'
+                # Deduct balance upon approval
+                if hasattr(user, 'balance'):
+                    current_bal = float(user.balance)
+                    if current_bal >= float(withdrawal.amount):
+                        user.balance = current_bal - float(withdrawal.amount)
+                        user.save()
+
             elif action == 'reject':
                 withdrawal.status = 'REJECTED'
-                if hasattr(withdrawal.user, 'balance'):
-                    withdrawal.user.balance = float(withdrawal.user.balance) + float(withdrawal.amount)
-                    withdrawal.user.save()
+
             withdrawal.save()
+
+            # Update matching transaction log
+            Transaction.objects.filter(
+                user=user, 
+                transaction_type='WITHDRAWAL', 
+                amount=withdrawal.amount, 
+                status='PENDING'
+            ).update(status=withdrawal.status)
+
             return Response({'message': f'Withdrawal successfully {action}d'})
         except WithdrawalRequest.DoesNotExist:
             return Response({'error': 'Withdrawal request not found'}, status=status.HTTP_404_NOT_FOUND)
