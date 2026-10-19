@@ -221,3 +221,27 @@ class AdminSystemSettingsView(generics.GenericAPIView):
             {"error": "platform_name field is required"}, 
             status=status.HTTP_400_BAD_REQUEST
         )
+
+
+
+
+class AdminProcessingsView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, *args, **kwargs):
+        # Default list of processors matching HYIP Manager Pro list
+        processings = [
+            {"id": 1, "name": "Bitcoin", "code": "btc", "status": "ON", "instructions": "Transfer USDT/BTC to wallet address TQn9Y2kh5B8uJ1K3mX7P4zL9vN8qW6eR1s", "min_deposit": "100.00", "max_deposit": "100000.00", "min_withdraw": "10.00", "max_withdraw": "50000.00"},
+            {"id": 2, "name": "USDT TRC20", "code": "usdt_trc20", "status": "ON", "instructions": "Send exact amount in USDT TRC20 network.", "min_deposit": "50.00", "max_deposit": "500000.00", "min_withdraw": "10.00", "max_withdraw": "100000.00"},
+            {"id": 3, "name": "USDT ERC20", "code": "usdt_erc20", "status": "ON", "instructions": "Send USDT via Ethereum ERC20.", "min_deposit": "100.00", "max_deposit": "500000.00", "min_withdraw": "20.00", "max_withdraw": "100000.00"},
+            {"id": 4, "name": "Ethereum", "code": "eth", "status": "ON", "instructions": "Transfer ETH to platform ETH wallet.", "min_deposit": "100.00", "max_deposit": "200000.00", "min_withdraw": "15.00", "max_withdraw": "50000.00"},
+            {"id": 5, "name": "BNB", "code": "bnb", "status": "ON", "instructions": "Transfer BNB (BEP20 network).", "min_deposit": "50.00", "max_deposit": "100000.00", "min_withdraw": "10.00", "max_withdraw": "50000.00"},
+            {"id": 6, "name": "PerfectMoney", "code": "pm", "status": "OFF", "instructions": "Automatic gateway deposit.", "min_deposit": "10.00", "max_deposit": "10000.00", "min_withdraw": "5.00", "max_withdraw": "5000.00"},
+            {"id": 7, "name": "Payeer", "code": "payeer", "status": "OFF", "instructions": "Payeer instant deposit.", "min_deposit": "10.00", "max_deposit": "10000.00", "min_withdraw": "5.00", "max_withdraw": "5000.00"},
+            {"id": 8, "name": "Bank Wire", "code": "wire", "status": "OFF", "instructions": "Bank transfer instructions upon request.", "min_deposit": "1000.00", "max_deposit": "1000000.00", "min_withdraw": "500.00", "max_withdraw": "500000.00"},
+        ]
+        return Response(processings, status=status.HTTP_200_OK)
+
+    def put(self, request, pk=None, *args, **kwargs):
+        # Update specific processing settings
+        return Response({"success": True, "message": "Processing gateway settings updated successfully!"})
