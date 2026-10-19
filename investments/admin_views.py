@@ -93,7 +93,7 @@ class AdminWithdrawalListView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request, *args, **kwargs):
-        # iexact handles 'PENDING', 'Pending', or 'pending'
+        # Case-insensitive status match
         withdrawals = WithdrawalRequest.objects.filter(status__iexact='PENDING').order_by('-created_at')
         
         data = []

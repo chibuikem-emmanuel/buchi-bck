@@ -208,25 +208,41 @@ class UserWithdrawalCreateView(generics.GenericAPIView):
 
     def post(self, request, *args, **kwargs):
         try:
-            amount = Decimal(str(request.data.get('amount', 0)))
-            if amount <= 0:
-                return Response({'error': 'Invalid amount'}, status=status.HTTP_400_BAD_REQUEST)
-                
-            if request.user.balance < amount:
-                return Response({'error': 'Insufficient account balance'}, status=status.HTTP_400_BAD_REQUEST)
+            amount = float(request.data.get('amount', 0))
+            method = request.data.get('method', 'USDT TRC20')
+        except (ValueError, TypeError):
+            return Response({"error": "Invalid withdrawal amount"}, status=status.HTTP_400_BAD_REQUEST)
 
-            request.user.balance -= amount
-            request.user.save()
+        if amount <= 0:
+            return Response({"error": "Amount must be greater than zero"}, status=status.HTTP_400_BAD_REQUEST)
 
-            txn = Transaction.objects.create(
-                user=request.user,
-                transaction_type='WITHDRAWAL',
-                amount=amount,
-                status='PENDING'
-            )
-            return Response({'success': True, 'message': 'Withdrawal request submitted'})
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        # Check user balance
+        user_balance = float(getattr(request.user, 'balance', 0))
+        if user_balance < amount:
+            return Response({"error": "Insufficient account balance to request withdrawal"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 1. CREATE WITHDRAWAL REQUEST (FOR ADMIN DASHBOARD)
+        withdrawal = WithdrawalRequest.objects.create(
+            user=request.user,
+            amount=amount,
+            method=method,
+            status='PENDING'  # Ensure uppercase 'PENDING'
+        )
+
+        # 2. CREATE TRANSACTION RECORD (FOR USER HISTORY)
+        Transaction.objects.create(
+            user=request.user,
+            transaction_type='WITHDRAWAL',
+            amount=amount,
+            payment_method=method,
+            status='PENDING'
+        )
+
+        return Response({
+            "success": True, 
+            "message": f"Withdrawal request of ${amount:.2f} submitted successfully!",
+            "id": withdrawal.id
+        }, status=status.HTTP_201_CREATED)
 
 
 
