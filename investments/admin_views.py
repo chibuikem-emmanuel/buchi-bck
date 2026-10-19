@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 # Assuming you have models named InvestmentPlan and UserDeposit/Deposit defined:
-from .models import InvestmentPlan, UserDeposit
+
 from decimal import Decimal
 
 User = get_user_model()
