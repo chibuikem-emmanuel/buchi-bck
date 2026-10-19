@@ -203,6 +203,8 @@ class UserDepositCreateView(generics.GenericAPIView):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+# crystals_core/investments/views.py
+
 class UserWithdrawalCreateView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -216,20 +218,19 @@ class UserWithdrawalCreateView(generics.GenericAPIView):
         if amount <= 0:
             return Response({"error": "Amount must be greater than zero"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check user balance
         user_balance = float(getattr(request.user, 'balance', 0))
         if user_balance < amount:
-            return Response({"error": "Insufficient account balance to request withdrawal"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Insufficient account balance"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 1. CREATE WITHDRAWAL REQUEST (FOR ADMIN DASHBOARD)
+        # MUST CREATE WithdrawalRequest ENTRY FOR ADMIN DASHBOARD
         withdrawal = WithdrawalRequest.objects.create(
             user=request.user,
             amount=amount,
             method=method,
-            status='PENDING'  # Ensure uppercase 'PENDING'
+            status='PENDING' # Upper case PENDING
         )
 
-        # 2. CREATE TRANSACTION RECORD (FOR USER HISTORY)
+        # ALSO CREATE Transaction RECORD FOR USER DASHBOARD
         Transaction.objects.create(
             user=request.user,
             transaction_type='WITHDRAWAL',
@@ -242,7 +243,7 @@ class UserWithdrawalCreateView(generics.GenericAPIView):
             "success": True, 
             "message": f"Withdrawal request of ${amount:.2f} submitted successfully!",
             "id": withdrawal.id
-        }, status=status.HTTP_201_CREATED)
+        })
 
 
 

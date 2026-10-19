@@ -93,7 +93,7 @@ class AdminWithdrawalListView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request, *args, **kwargs):
-        # Case-insensitive status match
+        # status__iexact handles any capitalization ('PENDING', 'Pending', 'pending')
         withdrawals = WithdrawalRequest.objects.filter(status__iexact='PENDING').order_by('-created_at')
         
         data = []
