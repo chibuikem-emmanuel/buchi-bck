@@ -87,8 +87,11 @@ class AdminTransactionListView(generics.ListAPIView):
         return Response(data)
 
 class AdminWithdrawalListView(generics.ListAPIView):
-    queryset = WithdrawalRequest.objects.filter(status='PENDING').order_by('-created_at')
     permission_classes = [IsAdminUser]
+
+    def get_queryset(self):
+        # Fetch fresh pending items directly on every request
+        return WithdrawalRequest.objects.filter(status='PENDING').order_by('-created_at')
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
@@ -98,7 +101,7 @@ class AdminWithdrawalListView(generics.ListAPIView):
             'username': w.user.username if w.user else '',
             'amount': float(w.amount),
             'method': getattr(w, 'method', 'USDT TRC20'),
-            'created_at': w.created_at
+            'created_at': w.created_at.strftime("%Y-%m-%d %H:%M:%S") if w.created_at else ''
         } for w in queryset]
         return Response(data)
 
