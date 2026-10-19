@@ -1,3 +1,4 @@
+from rest_framework.views import APIView
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
@@ -86,34 +87,33 @@ class AdminTransactionListView(generics.ListAPIView):
         } for t in queryset]
         return Response(data)
 
-class AdminWithdrawalListView(generics.ListAPIView):
+class AdminWithdrawalListView(APIView):
     permission_classes = [IsAdminUser]
 
-    def get_queryset(self):
-        # Fetch fresh pending items directly on every request
-        return WithdrawalRequest.objects.filter(status='PENDING').order_by('-created_at')
-
-    def list(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-        data = [{
-            'id': w.id,
-            'user_email': w.user.email if w.user else '',
-            'username': w.user.username if w.user else '',
-            'amount': float(w.amount),
-            'method': getattr(w, 'method', 'USDT TRC20'),
-            'created_at': w.created_at.strftime("%Y-%m-%d %H:%M:%S") if w.created_at else ''
-        } for w in queryset]
-        return Response(data)
+    def get(self, request, *args, **kwargs):
+        withdrawals = WithdrawalRequest.objects.filter(status='PENDING').order_by('-created_at')
+        
+        data = []
+        for w in withdrawals:
+            data.append({
+                'id': w.id,
+                'user_email': getattr(w.user, 'email', '') if w.user else '',
+                'username': getattr(w.user, 'username', '') if w.user else '',
+                'amount': float(w.amount),
+                'method': getattr(w, 'method', 'USDT TRC20'),
+                'created_at': w.created_at.strftime("%Y-%m-%d %H:%M:%S") if hasattr(w, 'created_at') and w.created_at else ''
+            })
+            
+        return Response(data, status=status.HTTP_200_OK)
 
 class AdminProcessWithdrawalView(generics.GenericAPIView):
     permission_classes = [IsAdminUser]
 
-    def post(self, request, *args, **kwargs):
-        withdrawal_id = kwargs.get('pk')
-        action = request.data.get('action') # 'approve' or 'reject'
+    def post(self, request, pk, *args, **kwargs):
+        action = request.data.get('action')  # 'approve' or 'reject'
 
         try:
-            withdrawal = WithdrawalRequest.objects.get(id=withdrawal_id)
+            withdrawal = WithdrawalRequest.objects.get(id=pk)
             user = withdrawal.user
 
             if action == 'approve':
@@ -130,7 +130,7 @@ class AdminProcessWithdrawalView(generics.GenericAPIView):
 
             withdrawal.save()
 
-            # Update matching transaction log
+            # Sync matching transaction log status
             Transaction.objects.filter(
                 user=user, 
                 transaction_type='WITHDRAWAL', 
@@ -138,7 +138,7 @@ class AdminProcessWithdrawalView(generics.GenericAPIView):
                 status='PENDING'
             ).update(status=withdrawal.status)
 
-            return Response({'message': f'Withdrawal successfully {action}d'})
+            return Response({'success': True, 'message': f'Withdrawal successfully {action}d'})
         except WithdrawalRequest.DoesNotExist:
             return Response({'error': 'Withdrawal request not found'}, status=status.HTTP_404_NOT_FOUND)
 
