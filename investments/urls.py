@@ -26,9 +26,9 @@ urlpatterns = [
     path('withdraw/', UserWithdrawalCreateView.as_view(), name='user-withdraw'),
     path('transactions/', UserTransactionListView.as_view(), name='user-transactions'),
 
-    path('api/admin/investment-plans/', AdminInvestmentPlanListView.as_view()),
-    path('api/admin/investment-plans/<int:pk>/', AdminInvestmentPlanDetailView.as_view()),
-    path('api/admin/expiring-deposits/', AdminExpiringDepositsView.as_view()),
+    path('admin/investment-plans/', AdminInvestmentPlanListView.as_view()),
+    path('admin/investment-plans/<int:pk>/', AdminInvestmentPlanDetailView.as_view()),
+    path('admin/expiring-deposits/', AdminExpiringDepositsView.as_view()),
 
     # Admin endpoints
     path('admin/users/', AdminUserListView.as_view(), name='admin-user-list'),
