@@ -28,14 +28,29 @@ class AdminUserListView(generics.ListAPIView):
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
-        data = [{
-            'id': u.id,
-            'username': u.username,
-            'email': u.email,
-            'balance': float(u.balance) if hasattr(u, 'balance') and u.balance else 0.00,
-            'is_blacklisted': getattr(u, 'is_blacklisted', False),
-            'phone_number': getattr(u, 'phone_number', '') or ''
-        } for u in queryset]
+        data = []
+        for u in queryset:
+            # Check if user has a related profile model or attributes
+            profile = getattr(u, 'profile', u)
+            
+            data.append({
+                'id': u.id,
+                'username': u.username,
+                'email': u.email,
+                'full_name': f"{u.first_name} {u.last_name}".strip(),
+                'status': 'Active' if u.is_active else 'Disabled',
+                'is_active': u.is_active,
+                'is_staff': u.is_staff,
+                'balance': float(getattr(u, 'balance', 0.00)),
+                'is_blacklisted': getattr(u, 'is_blacklisted', False),
+                'phone_number': getattr(u, 'phone_number', '') or '',
+                'btc_address': getattr(profile, 'btc_address', ''),
+                'usdt_trc20': getattr(profile, 'usdt_trc20', ''),
+                'usdt_erc20': getattr(profile, 'usdt_erc20', ''),
+                'eth_address': getattr(profile, 'eth_address', ''),
+                'bnb_address': getattr(profile, 'bnb_address', ''),
+                'admin_note': getattr(profile, 'admin_note', ''),
+            })
         return Response(data)
 
 class AdminUserDetailView(APIView):
