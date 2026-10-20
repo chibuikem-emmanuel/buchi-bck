@@ -45,28 +45,30 @@ class AdminUserDetailView(APIView):
     permission_classes = [permissions.IsAdminUser]
 
     def put(self, request, pk, format=None):
+        return self._update_user(request, pk)
+
+    def patch(self, request, pk, format=None):
+        return self._update_user(request, pk)
+
+    def _update_user(self, request, pk):
         try:
-            print("RECEIVED USER UPDATE DATA:", request.data) # Check your Django terminal
+            print("RECEIVED USER UPDATE DATA:", request.data)
             user = User.objects.get(pk=pk)
             data = request.data
             
-            # Handle username and email
             if 'username' in data and data['username'] is not None:
                 user.username = data['username']
             if 'email' in data and data['email'] is not None:
                 user.email = data['email']
                 
-            # Handle first name (accepts both first_name and firstName)
             first_name = data.get('first_name') or data.get('firstName')
             if first_name is not None:
                 user.first_name = first_name
                 
-            # Handle last name (accepts both last_name and lastName)
             last_name = data.get('last_name') or data.get('lastName')
             if last_name is not None:
                 user.last_name = last_name
                 
-            # Handle active status (accepts is_active, isActive, or status string)
             if 'is_active' in data:
                 user.is_active = bool(data['is_active'])
             elif 'isActive' in data:
@@ -75,7 +77,6 @@ class AdminUserDetailView(APIView):
                 status_val = str(data['status']).lower()
                 user.is_active = status_val in ['active', 'true', '1', 'enabled']
                 
-            # Handle staff role (accepts is_staff, isStaff, or role string)
             if 'is_staff' in data:
                 user.is_staff = bool(data['is_staff'])
             elif 'isStaff' in data:
@@ -83,7 +84,6 @@ class AdminUserDetailView(APIView):
             elif 'role' in data:
                 user.is_staff = str(data['role']).lower() in ['admin', 'staff', 'true']
                 
-            # Handle temporary password assignment
             password = data.get('password') or data.get('temp_password')
             if password and str(password).strip() != '':
                 user.set_password(str(password).strip())
