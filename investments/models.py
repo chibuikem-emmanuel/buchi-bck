@@ -92,15 +92,19 @@ class SystemSetting(models.Model):
 
 
 
+
 class ProcessingGateway(models.Model):
     name = models.CharField(max_length=100)
     code = models.CharField(max_length=50, unique=True)
-    status = models.CharField(max_length=10, default="ON") # "ON" or "OFF"
+    status = models.CharField(max_length=10, default="ON")  # "ON" or "OFF"
     instructions = models.TextField(blank=True, null=True)
     min_deposit = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     max_deposit = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     min_withdraw = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     max_withdraw = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+
+    class Meta:
+        ordering = ['id']
 
     def __str__(self):
         return f"{self.name} ({self.code})"

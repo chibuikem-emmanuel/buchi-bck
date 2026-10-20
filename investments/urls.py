@@ -30,6 +30,10 @@ urlpatterns = [
     path('admin/investment-plans/<int:pk>/', AdminInvestmentPlanDetailView.as_view()),
     path('admin/expiring-deposits/', AdminExpiringDepositsView.as_view()),
 
+
+    path('admin/processings/', AdminProcessingsView.as_view()),
+    path('admin/processings/<int:pk>/', AdminProcessingsView.as_view()),
+
     # Admin endpoints
     path('admin/users/', AdminUserListView.as_view(), name='admin-user-list'),
     path('admin/users/<int:pk>/', AdminUserDetailView.as_view(), name='admin-user-detail'),
