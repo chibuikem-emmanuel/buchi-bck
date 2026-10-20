@@ -5,6 +5,9 @@ class InvestmentPlanSerializer(serializers.ModelSerializer):
     class Meta:
         model = InvestmentPlan
         fields = '__all__'
+        extra_kwargs = {
+            'status': {'required': False, 'allow_blank': True},
+        }
 
 class UserInvestmentSerializer(serializers.ModelSerializer):
     plan_name = serializers.CharField(source='plan.name', read_only=True)
