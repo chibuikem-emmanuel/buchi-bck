@@ -53,89 +53,62 @@ class AdminUserDetailView(APIView):
             user = User.objects.get(pk=pk)
             data = request.data
             
-            # Basic info
+            # Basic credentials
             if 'username' in data and data['username'] is not None:
                 user.username = data['username']
             if 'email' in data and data['email'] is not None:
                 user.email = data['email']
                 
+            # Handle full_name conversion to first_name/last_name
+            if 'full_name' in data and data['full_name'] is not None:
+                name_parts = str(data['full_name']).strip().split(' ', 1)
+                user.first_name = name_parts[0]
+                user.last_name = name_parts[1] if len(name_parts) > 1 else ''
+            
+            # Fallback for explicit first/last name
             first_name = data.get('first_name') or data.get('firstName')
             if first_name is not None:
                 user.first_name = first_name
-                
             last_name = data.get('last_name') or data.get('lastName')
             if last_name is not None:
                 user.last_name = last_name
 
-            # Custom fields exposed in your list view
-            if 'phone_number' in data and hasattr(user, 'phone_number'):
-                user.phone_number = data['phone_number']
-            elif 'phoneNumber' in data and hasattr(user, 'phone_number'):
-                user.phone_number = data['phoneNumber']
-
-            if 'balance' in data and hasattr(user, 'balance'):
-                user.balance = Decimal(str(data['balance']))
-
-            if 'is_blacklisted' in data and hasattr(user, 'is_blacklisted'):
-                user.is_blacklisted = bool(data['is_blacklisted'])
-            elif 'isBlacklisted' in data and hasattr(user, 'is_blacklisted'):
-                user.is_blacklisted = bool(data['isBlacklisted'])
-                
-            # Status & Roles
-            if 'is_active' in data:
+            # Handle status -> is_active
+            if 'status' in data:
+                status_val = str(data['status']).lower()
+                user.is_active = status_val in ['active', 'true', '1', 'enabled', 'true']
+            elif 'is_active' in data:
                 user.is_active = bool(data['is_active'])
-            elif 'isActive' in data:
-                user.is_active = bool(data['isActive'])
-                
-            if 'is_staff' in data:
-                user.is_staff = bool(data['is_staff'])
-            elif 'isStaff' in data:
-                user.is_staff = bool(data['isStaff'])
-                
+
+            # Handle crypto wallets and admin notes (checking on user or related profile)
+            target_obj = getattr(user, 'profile', user)
+            fields_to_update = [
+                'btc_address', 'usdt_trc20', 'usdt_erc20', 
+                'eth_address', 'bnb_address', 'admin_note'
+            ]
+            for field in fields_to_update:
+                if field in data and hasattr(target_obj, field):
+                    setattr(target_obj, field, data[field])
+            
+            if hasattr(user, 'profile'):
+                user.profile.save()
+
             # Temporary password assignment
             password = data.get('password') or data.get('temp_password')
             if password and str(password).strip() != '':
                 user.set_password(str(password).strip())
                 
             user.save()
-            return Response({
-                "success": True, 
-                "message": "User updated successfully!"
-            }, status=status.HTTP_200_OK)
+            print(f"SUCCESS: User {pk} updated successfully.")
+            return Response({"success": True, "message": "User updated successfully!"}, status=status.HTTP_200_OK)
             
         except User.DoesNotExist:
             return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             print("USER UPDATE ERROR:", str(e))
             return Response({"success": False, "error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        
-class AdminCreditUserBalanceView(generics.GenericAPIView):
-    permission_classes = [IsAdminUser]
 
-    def post(self, request, *args, **kwargs):
-        email = request.data.get('email')
-        try:
-            amount = float(request.data.get('amount', 0))
-        except (ValueError, TypeError):
-            return Response({'error': 'Invalid amount format'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            user = User.objects.get(email=email)
-            if hasattr(user, 'balance'):
-                user.balance = float(user.balance) + amount
-                user.save()
-                
-                Transaction.objects.create(
-                    user=user,
-                    transaction_type='DEPOSIT',
-                    amount=amount,
-                    status='APPROVED'
-                )
-                return Response({'message': f'Successfully credited ${amount:.2f} to {user.email}'})
-            return Response({'error': 'User model missing balance field'}, status=status.HTTP_400_BAD_REQUEST)
-        except User.DoesNotExist:
-            return Response({'error': 'User with this email not found'}, status=status.HTTP_404_NOT_FOUND)
-
+            
 class AdminTransactionListView(generics.ListAPIView):
     queryset = Transaction.objects.all().order_by('-created_at')
     permission_classes = [IsAdminUser]
