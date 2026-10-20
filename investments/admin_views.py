@@ -271,14 +271,11 @@ class AdminProcessingsView(APIView):
         # Auto-seed default gateways if none exist in DB yet
         if not ProcessingGateway.objects.exists():
             defaults = [
-                {"id": 1, "name": "Bitcoin", "code": "btc", "status": "ON", "instructions": "Transfer Bitcoin to wallet address.", "min_deposit": "100.00", "max_deposit": "100000.00", "min_withdraw": "10.00", "max_withdraw": "50000.00"},
-                {"id": 2, "name": "USDT TRC20", "code": "usdt_trc20", "status": "ON", "instructions": "Send exact amount in USDT TRC20 network.", "min_deposit": "50.00", "max_deposit": "500000.00", "min_withdraw": "10.00", "max_withdraw": "100000.00"},
-                {"id": 3, "name": "USDT ERC20", "code": "usdt_erc20", "status": "ON", "instructions": "Send USDT via Ethereum ERC20.", "min_deposit": "100.00", "max_deposit": "500000.00", "min_withdraw": "20.00", "max_withdraw": "100000.00"},
-                {"id": 4, "name": "Ethereum", "code": "eth", "status": "ON", "instructions": "Transfer ETH to platform ETH wallet.", "min_deposit": "100.00", "max_deposit": "200000.00", "min_withdraw": "15.00", "max_withdraw": "50000.00"},
-                {"id": 5, "name": "BNB", "code": "bnb", "status": "ON", "instructions": "Transfer BNB (BEP20 network).", "min_deposit": "50.00", "max_deposit": "100000.00", "min_withdraw": "10.00", "max_withdraw": "50000.00"},
-                {"id": 6, "name": "PerfectMoney", "code": "pm", "status": "OFF", "instructions": "Automatic gateway deposit.", "min_deposit": "10.00", "max_deposit": "10000.00", "min_withdraw": "5.00", "max_withdraw": "5000.00"},
-                {"id": 7, "name": "Payeer", "code": "payeer", "status": "OFF", "instructions": "Payeer instant deposit.", "min_deposit": "10.00", "max_deposit": "10000.00", "min_withdraw": "5.00", "max_withdraw": "5000.00"},
-                {"id": 8, "name": "Bank Wire", "code": "wire", "status": "OFF", "instructions": "Bank transfer instructions upon request.", "min_deposit": "1000.00", "max_deposit": "1000000.00", "min_withdraw": "500.00", "max_withdraw": "500000.00"},
+                {"name": "Bitcoin", "code": "btc", "status": "ON", "instructions": "Transfer Bitcoin to wallet address.", "min_deposit": "100.00", "max_deposit": "100000.00", "min_withdraw": "10.00", "max_withdraw": "50000.00"},
+                {"name": "USDT TRC20", "code": "usdt_trc20", "status": "ON", "instructions": "Send exact amount in USDT TRC20 network.", "min_deposit": "50.00", "max_deposit": "500000.00", "min_withdraw": "10.00", "max_withdraw": "100000.00"},
+                {"name": "USDT ERC20", "code": "usdt_erc20", "status": "ON", "instructions": "Send USDT via Ethereum ERC20.", "min_deposit": "100.00", "max_deposit": "500000.00", "min_withdraw": "20.00", "max_withdraw": "100000.00"},
+                {"name": "Ethereum", "code": "eth", "status": "ON", "instructions": "Transfer ETH to platform ETH wallet.", "min_deposit": "100.00", "max_deposit": "200000.00", "min_withdraw": "15.00", "max_withdraw": "50000.00"},
+                {"name": "BNB", "code": "bnb", "status": "ON", "instructions": "Transfer BNB (BEP20 network).", "min_deposit": "50.00", "max_deposit": "100000.00", "min_withdraw": "10.00", "max_withdraw": "50000.00"},
             ]
             for d in defaults:
                 ProcessingGateway.objects.create(**d)
@@ -296,6 +293,27 @@ class AdminProcessingsView(APIView):
             "max_withdraw": str(g.max_withdraw),
         } for g in gateways]
         return Response(data, status=status.HTTP_200_OK)
+
+    def post(self, request, *args, **kwargs):
+        try:
+            data = request.data
+            gateway = ProcessingGateway.objects.create(
+                name=data.get('name', ''),
+                code=data.get('code', '').lower().replace(' ', '_'),
+                status=str(data.get('status', 'ON')).upper(),
+                instructions=data.get('instructions', ''),
+                min_deposit=data.get('min_deposit', 0.00),
+                max_deposit=data.get('max_deposit', 0.00),
+                min_withdraw=data.get('min_withdraw', 0.00),
+                max_withdraw=data.get('max_withdraw', 0.00),
+            )
+            return Response({
+                "success": True, 
+                "message": "Processing gateway created successfully!",
+                "id": gateway.id
+            }, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response({"success": False, "error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     def put(self, request, pk=None, *args, **kwargs):
         if not pk:
