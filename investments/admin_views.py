@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from .serializers import InvestmentPlanSerializer
+from rest_framework_simplejwt.authentication import JWTAuthentication
 # Assuming you have models named InvestmentPlan and UserDeposit/Deposit defined:
 
 from decimal import Decimal
@@ -265,6 +266,7 @@ from .models import InvestmentPlan
 from decimal import Decimal
 
 class AdminInvestmentPlanListView(APIView):
+    authentication_classes = [JWTAuthentication]
     permission_classes = [permissions.IsAdminUser]
 
     def post(self, request, format=None):
