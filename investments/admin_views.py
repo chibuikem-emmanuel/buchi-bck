@@ -266,28 +266,45 @@ from .models import InvestmentPlan
 from decimal import Decimal
 
 class AdminInvestmentPlanListView(APIView):
-    authentication_classes = [JWTAuthentication]
     permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request, format=None):
+        plans = InvestmentPlan.objects.all().order_by('id')
+        data = []
+        for p in plans:
+            data.append({
+                "id": p.id,
+                "name": p.name,
+                "min_amount": str(p.min_deposit),
+                "max_amount": str(p.max_deposit),
+                "profit_percent": str(p.daily_profit),
+                "duration_days": p.duration_days,
+                "status": "Active" if p.is_active else "Disabled"
+            })
+        return Response(data, status=status.HTTP_200_OK)
 
     def post(self, request, format=None):
         try:
-            print("RECEIVED DATA:", request.data) # Check your terminal stdout
             data = request.data
             
+            # Map frontend payload fields to your exact model fields
             name = data.get('name')
-            min_amount = Decimal(str(data.get('min_amount', '0')))
-            max_amount = Decimal(str(data.get('max_amount', '0')))
-            profit_percent = Decimal(str(data.get('profit_percent', '0')))
-            duration_days = int(data.get('duration_days', 0))
+            min_deposit = Decimal(str(data.get('min_amount') or data.get('min_deposit', '100.00')))
+            max_deposit = Decimal(str(data.get('max_amount') or data.get('max_deposit', '4999.00')))
+            daily_profit = Decimal(str(data.get('profit_percent') or data.get('daily_profit', '0')))
+            duration_days = int(data.get('duration_days', 5))
+            
+            # Handle status string conversion to boolean is_active
             status_val = data.get('status', 'Active')
+            is_active = True if str(status_val).lower() in ['active', 'true', '1'] else False
 
             plan = InvestmentPlan.objects.create(
                 name=name,
-                min_amount=min_amount,
-                max_amount=max_amount,
-                profit_percent=profit_percent,
+                min_deposit=min_deposit,
+                max_deposit=max_deposit,
+                daily_profit=daily_profit,
                 duration_days=duration_days,
-                status=status_val
+                is_active=is_active
             )
 
             return Response({
@@ -297,13 +314,10 @@ class AdminInvestmentPlanListView(APIView):
             }, status=status.HTTP_201_CREATED)
             
         except Exception as e:
-            # This captures the exact traceback and sends it as JSON to your browser
-            error_details = traceback.format_exc()
-            print(error_details) # Prints to your Django terminal
             return Response({
                 "success": False,
                 "error": str(e),
-                "traceback": error_details
+                "traceback": traceback.format_exc()
             }, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -313,13 +327,30 @@ class AdminInvestmentPlanDetailView(APIView):
     def put(self, request, pk, format=None):
         try:
             plan = InvestmentPlan.objects.get(pk=pk)
-            serializer = InvestmentPlanSerializer(plan, data=request.data, partial=True)
-            if serializer.is_valid():
-                serializer.save()
-                return Response({"success": True, "data": serializer.data}, status=status.HTTP_200_OK)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            data = request.data
+            
+            if 'name' in data: 
+                plan.name = data['name']
+            if 'min_amount' in data or 'min_deposit' in data:
+                plan.min_deposit = Decimal(str(data.get('min_amount') or data.get('min_deposit')))
+            if 'max_amount' in data or 'max_deposit' in data:
+                plan.max_deposit = Decimal(str(data.get('max_amount') or data.get('max_deposit')))
+            if 'profit_percent' in data or 'daily_profit' in data:
+                plan.daily_profit = Decimal(str(data.get('profit_percent') or data.get('daily_profit')))
+            if 'duration_days' in data:
+                plan.duration_days = int(data['duration_days'])
+            if 'status' in data:
+                plan.is_active = (str(data['status']).lower() in ['active', 'true', '1'])
+            elif 'is_active' in data:
+                plan.is_active = bool(data['is_active'])
+
+            plan.save()
+            return Response({"success": True, "message": "Investment plan updated successfully!"}, status=status.HTTP_200_OK)
+            
         except InvestmentPlan.DoesNotExist:
             return Response({"error": "Investment plan not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"success": False, "error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk, format=None):
         try:
@@ -328,7 +359,6 @@ class AdminInvestmentPlanDetailView(APIView):
             return Response({"success": True, "message": "Plan deleted successfully"}, status=status.HTTP_200_OK)
         except InvestmentPlan.DoesNotExist:
             return Response({"error": "Investment plan not found"}, status=status.HTTP_404_NOT_FOUND)
-
 
 class AdminExpiringDepositsView(APIView):
     permission_classes = [permissions.IsAdminUser]
