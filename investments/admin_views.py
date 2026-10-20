@@ -6,6 +6,7 @@ from .models import Transaction, WithdrawalRequest, SystemSetting, InvestmentPla
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from .serializers import InvestmentPlanSerializer
 # Assuming you have models named InvestmentPlan and UserDeposit/Deposit defined:
 
 from decimal import Decimal
@@ -260,63 +261,40 @@ class AdminInvestmentPlanListView(APIView):
     permission_classes = [permissions.IsAdminUser]
 
     def get(self, request, format=None):
-        # Fetch all investment plans directly from the database
         plans = InvestmentPlan.objects.all().order_by('id')
-        data = []
-        for p in plans:
-            data.append({
-                "id": p.id,
-                "name": p.name,
-                "min_amount": str(p.min_amount),
-                "max_amount": str(p.max_amount),
-                "profit_percent": str(p.profit_percent),
-                "duration_days": p.duration_days,
-                "status": getattr(p, 'status', 'Active'),
-                "total_count": getattr(p, 'total_count', 0),
-                "total_amount": str(getattr(p, 'total_amount', '0.00')),
-                "active_count": getattr(p, 'active_count', 0),
-                "active_amount": str(getattr(p, 'active_amount', '0.00'))
-            })
-        return Response(data, status=status.HTTP_200_OK)
+        serializer = InvestmentPlanSerializer(plans, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request, format=None):
-        # Handle creating and saving a new investment plan to the database
-        name = request.data.get('name')
-        min_amount = request.data.get('min_amount')
-        max_amount = request.data.get('max_amount')
-        profit_percent = request.data.get('profit_percent')
-        duration_days = request.data.get('duration_days')
-        status_val = request.data.get('status', 'Active')
-
-        if not all([name, min_amount, max_amount, profit_percent, duration_days]):
-            return Response({"error": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        plan = InvestmentPlan.objects.create(
-            name=name,
-            min_amount=min_amount,
-            max_amount=max_amount,
-            profit_percent=profit_percent,
-            duration_days=duration_days,
-            status=status_val
-        )
-
-        return Response({
-            "success": True, 
-            "message": "Investment plan created successfully!",
-            "id": plan.id
-        }, status=status.HTTP_201_CREATED)
+        serializer = InvestmentPlanSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"success": True, "data": serializer.data}, status=status.HTTP_201_CREATED)
+        # This will return the exact field validation error to your frontend
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class AdminInvestmentPlanDetailView(APIView):
     permission_classes = [permissions.IsAdminUser]
 
     def put(self, request, pk, format=None):
-        # Update investment plan logic by pk
-        return Response({"success": True, "message": f"Investment plan {pk} updated successfully!"}, status=status.HTTP_200_OK)
+        try:
+            plan = InvestmentPlan.objects.get(pk=pk)
+            serializer = InvestmentPlanSerializer(plan, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response({"success": True, "data": serializer.data}, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except InvestmentPlan.DoesNotExist:
+            return Response({"error": "Investment plan not found"}, status=status.HTTP_404_NOT_FOUND)
 
     def delete(self, request, pk, format=None):
-        # Delete investment plan logic by pk
-        return Response({"success": True, "message": f"Investment plan {pk} deleted successfully!"}, status=status.HTTP_200_OK)
+        try:
+            plan = InvestmentPlan.objects.get(pk=pk)
+            plan.delete()
+            return Response({"success": True, "message": "Plan deleted successfully"}, status=status.HTTP_200_OK)
+        except InvestmentPlan.DoesNotExist:
+            return Response({"error": "Investment plan not found"}, status=status.HTTP_404_NOT_FOUND)
 
 
 class AdminExpiringDepositsView(APIView):
