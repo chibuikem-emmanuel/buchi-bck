@@ -257,31 +257,21 @@ class AdminProcessingsView(APIView):
 
 
 
+import traceback
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status, permissions
+from .models import InvestmentPlan
+from decimal import Decimal
+
 class AdminInvestmentPlanListView(APIView):
     permission_classes = [permissions.IsAdminUser]
 
-    def get(self, request, format=None):
-        plans = InvestmentPlan.objects.all().order_by('id')
-        data = []
-        for p in plans:
-            data.append({
-                "id": p.id,
-                "name": p.name,
-                "min_amount": str(p.min_amount),
-                "max_amount": str(p.max_amount),
-                "profit_percent": str(p.profit_percent),
-                "duration_days": p.duration_days,
-                "status": getattr(p, 'status', 'Active'),
-                "total_count": getattr(p, 'total_count', 0),
-                "total_amount": str(getattr(p, 'total_amount', '0.00')),
-                "active_count": getattr(p, 'active_count', 0),
-                "active_amount": str(getattr(p, 'active_amount', '0.00'))
-            })
-        return Response(data, status=status.HTTP_200_OK)
-
     def post(self, request, format=None):
         try:
+            print("RECEIVED DATA:", request.data) # Check your terminal stdout
             data = request.data
+            
             name = data.get('name')
             min_amount = Decimal(str(data.get('min_amount', '0')))
             max_amount = Decimal(str(data.get('max_amount', '0')))
@@ -305,8 +295,14 @@ class AdminInvestmentPlanListView(APIView):
             }, status=status.HTTP_201_CREATED)
             
         except Exception as e:
-            # Returns clean JSON error instead of crashing to HTML
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            # This captures the exact traceback and sends it as JSON to your browser
+            error_details = traceback.format_exc()
+            print(error_details) # Prints to your Django terminal
+            return Response({
+                "success": False,
+                "error": str(e),
+                "traceback": error_details
+            }, status=status.HTTP_400_BAD_REQUEST)
 
 
 class AdminInvestmentPlanDetailView(APIView):
