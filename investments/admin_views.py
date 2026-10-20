@@ -107,8 +107,34 @@ class AdminUserDetailView(APIView):
         except Exception as e:
             print("USER UPDATE ERROR:", str(e))
             return Response({"success": False, "error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+class AdminCreditUserBalanceView(generics.GenericAPIView):
+    permission_classes = [IsAdminUser]
 
-            
+    def post(self, request, *args, **kwargs):
+        email = request.data.get('email')
+        try:
+            amount = float(request.data.get('amount', 0))
+        except (ValueError, TypeError):
+            return Response({'error': 'Invalid amount format'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(email=email)
+            if hasattr(user, 'balance'):
+                user.balance = float(user.balance) + amount
+                user.save()
+                
+                Transaction.objects.create(
+                    user=user,
+                    transaction_type='DEPOSIT',
+                    amount=amount,
+                    status='APPROVED'
+                )
+                return Response({'message': f'Successfully credited ${amount:.2f} to {user.email}'})
+            return Response({'error': 'User model missing balance field'}, status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            return Response({'error': 'User with this email not found'}, status=status.HTTP_404_NOT_FOUND)
+
 class AdminTransactionListView(generics.ListAPIView):
     queryset = Transaction.objects.all().order_by('-created_at')
     permission_classes = [IsAdminUser]
