@@ -22,24 +22,21 @@ class IsAdminUser(permissions.BasePermission):
             (request.user.is_staff or request.user.is_superuser)
         )
 
-class AdminUserListView(APIView):
-    permission_classes = [permissions.IsAdminUser]
+class AdminUserListView(generics.ListAPIView):
+    queryset = User.objects.all().order_by('-date_joined')
+    permission_classes = [IsAdminUser]
 
-    def get(self, request, format=None):
-        users = User.objects.all().order_by('-date_joined')
-        data = []
-        for u in users:
-            data.append({
-                "id": u.id,
-                "username": u.username,
-                "email": u.email,
-                "first_name": u.first_name,
-                "last_name": u.last_name,
-                "is_active": u.is_active,
-                "is_staff": u.is_staff,
-                "date_joined": u.date_joined,
-            })
-        return Response(data, status=status.HTTP_200_OK)
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        data = [{
+            'id': u.id,
+            'username': u.username,
+            'email': u.email,
+            'balance': float(u.balance) if hasattr(u, 'balance') and u.balance else 0.00,
+            'is_blacklisted': getattr(u, 'is_blacklisted', False),
+            'phone_number': getattr(u, 'phone_number', '') or ''
+        } for u in queryset]
+        return Response(data)
 
 class AdminUserDetailView(APIView):
     permission_classes = [IsAdminUser]
