@@ -22,75 +22,83 @@ class IsAdminUser(permissions.BasePermission):
             (request.user.is_staff or request.user.is_superuser)
         )
 
-class AdminUserListView(generics.ListAPIView):
-    queryset = User.objects.all().order_by('-date_joined')
-    permission_classes = [IsAdminUser]
+class AdminUserListView(APIView):
+    permission_classes = [permissions.IsAdminUser]
 
-    def list(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-        data = [{
-            'id': u.id,
-            'username': u.username,
-            'email': u.email,
-            'balance': float(u.balance) if hasattr(u, 'balance') and u.balance else 0.00,
-            'is_blacklisted': getattr(u, 'is_blacklisted', False),
-            'phone_number': getattr(u, 'phone_number', '') or ''
-        } for u in queryset]
-        return Response(data)
+    def get(self, request, format=None):
+        users = User.objects.all().order_by('-date_joined')
+        data = []
+        for u in users:
+            data.append({
+                "id": u.id,
+                "username": u.username,
+                "email": u.email,
+                "first_name": u.first_name,
+                "last_name": u.last_name,
+                "is_active": u.is_active,
+                "is_staff": u.is_staff,
+                "date_joined": u.date_joined,
+            })
+        return Response(data, status=status.HTTP_200_OK)
 
 class AdminUserDetailView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [permissions.IsAdminUser]
 
-    def patch(self, request, pk, *args, **kwargs):
+    def put(self, request, pk, format=None):
         try:
-            user = User.objects.get(id=pk)
+            print("RECEIVED USER UPDATE DATA:", request.data) # Check your Django terminal
+            user = User.objects.get(pk=pk)
             data = request.data
-
-            # Update core user details
-            if 'full_name' in data:
-                user.full_name = data['full_name']
-            if 'username' in data and data['username']:
+            
+            # Handle username and email
+            if 'username' in data and data['username'] is not None:
                 user.username = data['username']
-            if 'email' in data and data['email']:
+            if 'email' in data and data['email'] is not None:
                 user.email = data['email']
-            if 'status' in data:
-                user.is_blacklisted = (data['status'] == 'Disabled')
-
-            # Update password if provided
-            if data.get('password'):
-                user.set_password(data['password'])
-
-            # Update crypto wallet addresses
-            if 'btc_address' in data:
-                user.btc_address = data['btc_address']
-            if 'usdt_trc20' in data:
-                user.usdt_trc20 = data['usdt_trc20']
-            if 'usdt_erc20' in data:
-                user.usdt_erc20 = data['usdt_erc20']
-            if 'eth_address' in data:
-                user.eth_address = data['eth_address']
-            if 'bnb_address' in data:
-                user.bnb_address = data['bnb_address']
-            if 'admin_note' in data:
-                user.admin_note = data['admin_note']
-
+                
+            # Handle first name (accepts both first_name and firstName)
+            first_name = data.get('first_name') or data.get('firstName')
+            if first_name is not None:
+                user.first_name = first_name
+                
+            # Handle last name (accepts both last_name and lastName)
+            last_name = data.get('last_name') or data.get('lastName')
+            if last_name is not None:
+                user.last_name = last_name
+                
+            # Handle active status (accepts is_active, isActive, or status string)
+            if 'is_active' in data:
+                user.is_active = bool(data['is_active'])
+            elif 'isActive' in data:
+                user.is_active = bool(data['isActive'])
+            elif 'status' in data:
+                status_val = str(data['status']).lower()
+                user.is_active = status_val in ['active', 'true', '1', 'enabled']
+                
+            # Handle staff role (accepts is_staff, isStaff, or role string)
+            if 'is_staff' in data:
+                user.is_staff = bool(data['is_staff'])
+            elif 'isStaff' in data:
+                user.is_staff = bool(data['isStaff'])
+            elif 'role' in data:
+                user.is_staff = str(data['role']).lower() in ['admin', 'staff', 'true']
+                
+            # Handle temporary password assignment
+            password = data.get('password') or data.get('temp_password')
+            if password and str(password).strip() != '':
+                user.set_password(str(password).strip())
+                
             user.save()
-
             return Response({
                 "success": True, 
-                "message": f"User {user.username} updated successfully!",
-                "user": {
-                    "id": user.id,
-                    "username": user.username,
-                    "email": user.email,
-                    "full_name": getattr(user, 'full_name', ''),
-                    "is_blacklisted": user.is_blacklisted,
-                    "balance": float(getattr(user, 'balance', 0))
-                }
+                "message": "User updated successfully!"
             }, status=status.HTTP_200_OK)
-
+            
         except User.DoesNotExist:
             return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            print("USER UPDATE ERROR:", str(e))
+            return Response({"success": False, "error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class AdminCreditUserBalanceView(generics.GenericAPIView):
     permission_classes = [IsAdminUser]
