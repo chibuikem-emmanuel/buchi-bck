@@ -1,14 +1,16 @@
 from rest_framework import generics, permissions, serializers
-from .models import InvestmentPlan, UserInvestment, Transaction, WithdrawalRequest
+from .models import InvestmentPlan, UserInvestment, Transaction, Withdrawal, WithdrawalRequest
 from .serializers import InvestmentPlanSerializer, UserInvestmentSerializer, TransactionSerializer
 from datetime import timedelta
 from django.utils import timezone
 from rest_framework.views import APIView
 
+from django.db import transaction
+
 from decimal import Decimal
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
-from .models import Transaction, InvestmentPlan
+from .models import Transaction, InvestmentPlan, WithdrawalRequest, Deposit
 from .serializers import TransactionSerializer, InvestmentPlanSerializer
 
 class InvestmentPlanListView(generics.ListAPIView):
@@ -289,3 +291,92 @@ class UserTransactionListView(APIView):
             })
             
         return Response(data, status=status.HTTP_200_OK)
+
+
+
+class UserDepositsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        # Fetch only the logged-in user's deposits
+        deposits = Deposit.objects.filter(user=request.user)
+        data = [{
+            "id": d.id,
+            "gateway": d.gateway,
+            "amount": str(d.amount),
+            "transaction_id": d.transaction_id,
+            "status": d.status,
+            "created_at": d.created_at.strftime('%Y-%m-%d %H:%M'),
+        } for d in deposits]
+        return Response(data, status=status.HTTP_200_OK)
+
+    def post(self, request, *args, **kwargs):
+        gateway = request.data.get('gateway')
+        amount = request.data.get('amount')
+        transaction_id = request.data.get('transaction_id')
+
+        if not gateway or not amount or not transaction_id:
+            return Response({"error": "All fields (gateway, amount, transaction_id) are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            deposit = Deposit.objects.create(
+                user=request.user,
+                gateway=gateway,
+                amount=amount,
+                transaction_id=transaction_id,
+                status='PENDING'
+            )
+            return Response({"success": True, "message": "Deposit submitted successfully! Waiting for admin approval."}, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+
+
+
+
+class UserWithdrawalsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        # Fetch only the logged-in user's withdrawals
+        withdrawals = Withdrawal.objects.filter(user=request.user)
+        data = [{
+            "id": w.id,
+            "gateway": w.gateway,
+            "amount": str(w.amount),
+            "wallet_address": w.wallet_address,
+            "status": w.status,
+            "created_at": w.created_at.strftime('%Y-%m-%d %H:%M'),
+        } for w in withdrawals]
+        return Response(data, status=status.HTTP_200_OK)
+
+    def post(self, request, *args, **kwargs):
+        gateway = request.data.get('gateway')
+        amount = float(request.data.get('amount', 0))
+        wallet_address = request.data.get('wallet_address')
+
+        if not gateway or amount <= 0 or not wallet_address:
+            return Response({"error": "Valid gateway, amount, and wallet address are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            with transaction.atomic():
+                user = request.user
+                profile = getattr(user, 'profile', user) # Handles profile or direct balance field
+
+                if float(profile.balance) < amount:
+                    return Response({"error": "Insufficient balance for this withdrawal."}, status=status.HTTP_400_BAD_REQUEST)
+
+                # Deduct balance immediately upon request (held in escrow)
+                profile.balance -= amount
+                profile.save()
+
+                withdrawal = Withdrawal.objects.create(
+                    user=user,
+                    gateway=gateway,
+                    amount=amount,
+                    wallet_address=wallet_address,
+                    status='PENDING'
+                )
+                return Response({"success": True, "message": "Withdrawal request submitted successfully!"}, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

@@ -18,11 +18,17 @@ from .admin_views import (
 from .views import (
     InvestmentPlanListView,
     UserDepositCreateView,
+    UserDepositsView,
     UserWithdrawalCreateView,
-    UserTransactionListView
+    UserTransactionListView,
+    UserWithdrawalsView,
 )
 
 urlpatterns = [
+
+    # User routes
+    path('user/deposits/', UserDepositsView.as_view()),
+    path('user/withdrawals/', UserWithdrawalsView.as_view()),
     # User-facing endpoints
     path('plans/', InvestmentPlanListView.as_view(), name='investment-plans'),
     path('deposit/', UserDepositCreateView.as_view(), name='user-deposit'),
