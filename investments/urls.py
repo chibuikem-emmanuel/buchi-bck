@@ -11,8 +11,8 @@ from .admin_views import (
     AdminProcessWithdrawalView,
     AdminSystemSettingsView,
     AdminProcessingsView,
-    AdminDepositsView,
     AdminAnalyticsView,
+    AdminDepositsView,
     AdminWithdrawalsView,
 )
 from .views import (

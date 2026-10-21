@@ -609,3 +609,58 @@ class AdminExpiringDepositsView(APIView):
             }
         ]
         return Response(expiring, status=status.HTTP_200_OK)
+    
+
+
+class AdminDepositsView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request, *args, **kwargs):
+        deposits = Deposit.objects.select_related('user').all()
+        data = [{
+            "id": d.id,
+            "username": d.user.username if d.user else "Unknown",
+            "user_email": d.user.email if d.user else "",
+            "gateway": d.gateway,
+            "amount": str(d.amount),
+            "transaction_id": d.transaction_id,
+            "status": d.status,
+            "created_at": d.created_at.strftime('%Y-%m-%d %H:%M'),
+        } for d in deposits]
+        return Response(data, status=status.HTTP_200_OK)
+
+    def post(self, request, pk=None, *args, **kwargs):
+        deposit_id = request.data.get('deposit_id') or pk
+        action = request.data.get('action')
+
+        if not deposit_id or not action:
+            return Response({"error": "deposit_id and action are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            with transaction.atomic():
+                dep = Deposit.objects.select_for_update().get(pk=deposit_id)
+                if dep.status != 'PENDING':
+                    return Response({"error": f"Deposit is already {dep.status.lower()}."}, status=status.HTTP_400_BAD_REQUEST)
+
+                if action == 'approve':
+                    dep.status = 'APPROVED'
+                    user = dep.user
+                    if hasattr(user, 'profile'):
+                        user.profile.balance += dep.amount
+                        user.profile.save()
+                    elif hasattr(user, 'balance'):
+                        user.balance += dep.amount
+                        user.save()
+                    dep.save()
+                    return Response({"success": True, "message": f"Deposit #{dep.id} approved successfully!"})
+
+                elif action == 'reject':
+                    dep.status = 'REJECTED'
+                    dep.save()
+                    return Response({"success": True, "message": f"Deposit #{dep.id} has been rejected."})
+
+                return Response({"error": "Invalid action parameter."}, status=status.HTTP_400_BAD_REQUEST)
+        except Deposit.DoesNotExist:
+            return Response({"error": "Deposit record not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
