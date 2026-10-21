@@ -273,37 +273,30 @@ class AdminAnalyticsView(APIView):
 
     def get(self, request, *args, **kwargs):
         try:
-            # 1. Total & Active Users
             total_users = User.objects.count()
             
-            # 2. Deposit Financial Aggregates
-            total_deposits_amount = Deposit.objects.filter(
-                status='APPROVED'
-            ).aggregate(total=Sum('amount'))['total'] or 0.00
-
+            approved_deposits = Deposit.objects.filter(status='APPROVED').aggregate(total=Sum('amount'))['total']
+            total_deposits_amount = approved_deposits if approved_deposits is not None else 0.00
+            
             pending_deposits_count = Deposit.objects.filter(status='PENDING').count()
-            pending_deposits_amount = Deposit.objects.filter(
-                status='PENDING'
-            ).aggregate(total=Sum('amount'))['total'] or 0.00
+            pending_dep_amt = Deposit.objects.filter(status='PENDING').aggregate(total=Sum('amount'))['total']
+            pending_deposits_amount = pending_dep_amt if pending_dep_amt is not None else 0.00
 
-            # 3. Withdrawal Financial Aggregates
-            total_withdrawals_amount = Withdrawal.objects.filter(
-                status='APPROVED'
-            ).aggregate(total=Sum('amount'))['total'] or 0.00
-
+            approved_withdrawals = Withdrawal.objects.filter(status='APPROVED').aggregate(total=Sum('amount'))['total']
+            total_withdrawals_amount = approved_withdrawals if approved_withdrawals is not None else 0.00
+            
             pending_withdrawals_count = Withdrawal.objects.filter(status='PENDING').count()
-            pending_withdrawals_amount = Withdrawal.objects.filter(
-                status='PENDING'
-            ).aggregate(total=Sum('amount'))['total'] or 0.00
+            pending_wth_amt = Withdrawal.objects.filter(status='PENDING').aggregate(total=Sum('amount'))['total']
+            pending_withdrawals_amount = pending_wth_amt if pending_wth_amt is not None else 0.00
 
-            # 4. Investment Plans Overview
             total_plans_count = InvestmentPlan.objects.count()
-            active_plans_count = InvestmentPlan.objects.filter(status='Active').count()
+            
+            # FIXED: Use is_active=True instead of status='Active'
+            active_plans_count = InvestmentPlan.objects.filter(is_active=True).count()
 
-            # 5. Calculate Platform Net Volume
             net_platform_volume = float(total_deposits_amount) - float(total_withdrawals_amount)
 
-            analytics_data = {
+            return Response({
                 "overview": {
                     "totalUsers": total_users,
                     "netPlatformVolume": f"{net_platform_volume:.2f}",
@@ -320,11 +313,10 @@ class AdminAnalyticsView(APIView):
                     "pendingCount": pending_withdrawals_count,
                     "pendingAmount": f"{float(pending_withdrawals_amount):.2f}",
                 }
-            }
-
-            return Response(analytics_data, status=status.HTTP_200_OK)
-
+            }, status=status.HTTP_200_OK)
+            
         except Exception as e:
+            print("Analytics Error:", str(e))
             return Response({"success": False, "error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         
 
