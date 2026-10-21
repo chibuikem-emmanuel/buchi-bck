@@ -1,8 +1,15 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from decimal import Decimal
+from django.conf import settings
 
 User = get_user_model()
+
+
+
+
+
+
 
 class InvestmentPlan(models.Model):
     name = models.CharField(max_length=100)
@@ -71,6 +78,20 @@ class WithdrawalRequest(models.Model):
 
     def __str__(self):
         return f"Withdrawal #{self.id} - {self.user.username} - ${self.amount}"
+
+
+
+class Deposit(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='deposits')
+    gateway = models.CharField(max_length=100) # e.g. "USDT TRC20"
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    transaction_id = models.CharField(max_length=100, unique=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
 
 
 class SystemSetting(models.Model):

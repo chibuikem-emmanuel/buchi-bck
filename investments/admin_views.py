@@ -9,6 +9,9 @@ from rest_framework import status
 from .serializers import InvestmentPlanSerializer
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from .models import ProcessingGateway
+from .models import Deposit, Withdrawal
+from django.db import transaction
+from django.db.models import Sum, Count
 # Assuming you have models named InvestmentPlan and UserDeposit/Deposit defined:
 
 from decimal import Decimal
@@ -260,6 +263,128 @@ class AdminSystemSettingsView(generics.GenericAPIView):
             {"error": "platform_name field is required"}, 
             status=status.HTTP_400_BAD_REQUEST
         )
+    
+
+
+
+
+class AdminAnalyticsView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request, *args, **kwargs):
+        try:
+            # 1. Total & Active Users
+            total_users = User.objects.count()
+            
+            # 2. Deposit Financial Aggregates
+            total_deposits_amount = Deposit.objects.filter(
+                status='APPROVED'
+            ).aggregate(total=Sum('amount'))['total'] or 0.00
+
+            pending_deposits_count = Deposit.objects.filter(status='PENDING').count()
+            pending_deposits_amount = Deposit.objects.filter(
+                status='PENDING'
+            ).aggregate(total=Sum('amount'))['total'] or 0.00
+
+            # 3. Withdrawal Financial Aggregates
+            total_withdrawals_amount = Withdrawal.objects.filter(
+                status='APPROVED'
+            ).aggregate(total=Sum('amount'))['total'] or 0.00
+
+            pending_withdrawals_count = Withdrawal.objects.filter(status='PENDING').count()
+            pending_withdrawals_amount = Withdrawal.objects.filter(
+                status='PENDING'
+            ).aggregate(total=Sum('amount'))['total'] or 0.00
+
+            # 4. Investment Plans Overview
+            total_plans_count = InvestmentPlan.objects.count()
+            active_plans_count = InvestmentPlan.objects.filter(status='Active').count()
+
+            # 5. Calculate Platform Net Volume
+            net_platform_volume = float(total_deposits_amount) - float(total_withdrawals_amount)
+
+            analytics_data = {
+                "overview": {
+                    "totalUsers": total_users,
+                    "netPlatformVolume": f"{net_platform_volume:.2f}",
+                    "totalPlans": total_plans_count,
+                    "activePlans": active_plans_count,
+                },
+                "deposits": {
+                    "totalApproved": f"{float(total_deposits_amount):.2f}",
+                    "pendingCount": pending_deposits_count,
+                    "pendingAmount": f"{float(pending_deposits_amount):.2f}",
+                },
+                "withdrawals": {
+                    "totalApproved": f"{float(total_withdrawals_amount):.2f}",
+                    "pendingCount": pending_withdrawals_count,
+                    "pendingAmount": f"{float(pending_withdrawals_amount):.2f}",
+                }
+            }
+
+            return Response(analytics_data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"success": False, "error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+
+
+
+class AdminWithdrawalsView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request, *args, **kwargs):
+        withdrawals = Withdrawal.objects.select_related('user').all()
+        data = [{
+            "id": w.id,
+            "username": w.user.username if w.user else "Unknown",
+            "user_email": w.user.email if w.user else "",
+            "gateway": w.gateway,
+            "amount": str(w.amount),
+            "wallet_address": w.wallet_address,
+            "status": w.status,
+            "created_at": w.created_at.strftime('%Y-%m-%d %H:%M'),
+        } for w in withdrawals]
+        return Response(data, status=status.HTTP_200_OK)
+
+    def post(self, request, pk=None, *args, **kwargs):
+        """Action endpoint to approve or reject a withdrawal"""
+        withdrawal_id = request.data.get('withdrawal_id') or pk
+        action = request.data.get('action') # 'approve' or 'reject'
+
+        if not withdrawal_id or not action:
+            return Response({"error": "withdrawal_id and action are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            with transaction.atomic():
+                wth = Withdrawal.objects.select_for_update().get(pk=withdrawal_id)
+                if wth.status != 'PENDING':
+                    return Response({"error": f"Withdrawal is already {wth.status.lower()}."}, status=status.HTTP_400_BAD_REQUEST)
+
+                if action == 'approve':
+                    wth.status = 'APPROVED'
+                    wth.save()
+                    return Response({"success": True, "message": f"Withdrawal #{wth.id} approved successfully!"})
+
+                elif action == 'reject':
+                    wth.status = 'REJECTED'
+                    # Refund balance back to user
+                    user = wth.user
+                    if hasattr(user, 'profile'):
+                        user.profile.balance += wth.amount
+                        user.profile.save()
+                    elif hasattr(user, 'balance'):
+                        user.balance += wth.amount
+                        user.save()
+                    wth.save()
+                    return Response({"success": True, "message": f"Withdrawal #{wth.id} rejected and balance refunded."})
+
+                return Response({"error": "Invalid action parameter."}, status=status.HTTP_400_BAD_REQUEST)
+
+        except Withdrawal.DoesNotExist:
+            return Response({"error": "Withdrawal record not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 
