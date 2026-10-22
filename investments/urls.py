@@ -23,7 +23,6 @@ from .views import (
     UserTransactionListView,
     UserWithdrawalsView,
 )
-
 urlpatterns = [
 
     # User routes

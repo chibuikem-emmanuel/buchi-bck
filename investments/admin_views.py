@@ -616,7 +616,13 @@ class AdminDepositsView(APIView):
     permission_classes = [permissions.IsAdminUser]
 
     def get(self, request, *args, **kwargs):
+        user_id = request.query_params.get('user_id')
         deposits = Deposit.objects.select_related('user').all()
+        
+        # Filter by user_id if provided from the frontend dashboard
+        if user_id:
+            deposits = deposits.filter(user_id=user_id)
+
         data = [{
             "id": d.id,
             "username": d.user.username if d.user else "Unknown",
