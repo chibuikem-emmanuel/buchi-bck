@@ -26,6 +26,8 @@ class IsAdminUser(permissions.BasePermission):
             (request.user.is_staff or request.user.is_superuser)
         )
 
+
+
 class AdminUserListView(generics.ListAPIView):
     queryset = User.objects.all().order_by('-date_joined')
     permission_classes = [IsAdminUser]
@@ -37,6 +39,10 @@ class AdminUserListView(generics.ListAPIView):
             # Check if user has a related profile model or attributes
             profile = getattr(u, 'profile', u)
             
+            # Calculate total approved and pending/active deposits
+            total_deposit = u.deposits.filter(status='APPROVED').aggregate(Sum('amount'))['amount__sum'] or 0.00
+            active_deposit = u.deposits.filter(status='PENDING').aggregate(Sum('amount'))['amount__sum'] or 0.00
+            
             data.append({
                 'id': u.id,
                 'username': u.username,
@@ -46,6 +52,8 @@ class AdminUserListView(generics.ListAPIView):
                 'is_active': u.is_active,
                 'is_staff': u.is_staff,
                 'balance': float(getattr(u, 'balance', 0.00)),
+                'total_deposit': float(total_deposit),
+                'active_deposit': float(active_deposit),
                 'is_blacklisted': getattr(u, 'is_blacklisted', False),
                 'phone_number': getattr(u, 'phone_number', '') or '',
                 'btc_address': getattr(profile, 'btc_address', ''),
