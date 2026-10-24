@@ -49,3 +49,24 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
 
 
 
+
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    active_investments = serializers.SerializerMethodField()
+    total_earned = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = [
+            'id', 'username', 'email', 'balance', 
+            'active_investments', 'total_earned', 
+            'btc_address', 'usdt_trc20', 'usdt_erc20', 'eth_address', 'bnb_address'
+        ]
+
+    def get_active_investments(self, obj):
+        # Sums active user investments (adjust filter status based on your UserInvestment model)
+        return obj.userinvestments.filter(is_completed=False).aggregate(Sum('amount'))['amount__sum'] or 0.00
+
+    def get_total_earned(self, obj):
+        # Sums completed profits or earnings from transactions
+        return obj.transactions.filter(type='PROFIT', status='APPROVED').aggregate(Sum('amount'))['amount__sum'] or 0.00
