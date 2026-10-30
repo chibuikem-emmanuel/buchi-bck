@@ -5,7 +5,7 @@ from datetime import timedelta
 from django.utils import timezone
 from django.db.models import Q
 from rest_framework.views import APIView
-from serializers import RegisterSerializer
+from .serializers import RegisterSerializer
 
 from django.db import transaction
 
