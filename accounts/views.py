@@ -1,6 +1,13 @@
 from rest_framework import generics, permissions
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from django.contrib.auth import get_user_model
+from decimal import Decimal
+from django.db import transaction
+from .models import Transaction
 from .serializers import CustomTokenObtainPairSerializer, RegisterSerializer, UserSerializer
 
 User = get_user_model()
@@ -24,7 +31,7 @@ class UserProfileView(generics.RetrieveAPIView):
 
 
 
-
+INSTANT_SIGNUP_BONUS = Decimal('5.00')
 
 class RegisterView(APIView):
     def post(self, request):
