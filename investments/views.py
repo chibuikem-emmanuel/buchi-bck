@@ -5,6 +5,7 @@ from datetime import timedelta
 from django.utils import timezone
 from django.db.models import Q
 from rest_framework.views import APIView
+from serializers import RegisterSerializer
 
 from django.db import transaction
 
@@ -391,75 +392,50 @@ class UserWithdrawalsView(APIView):
 # Define the instant referral bonus amount
 INSTANT_SIGNUP_BONUS = Decimal('5.00')
 
-class RegisterView(APIView):
-    def post(self, request):
-        data = request.data
-        print(f"--- REGISTRATION PAYLOAD RECEIVED ---: {data}")  # DEBUG LOG
+class RegisterView(generics.CreateAPIView):
+    queryset = User.objects.all()
+    serializer_class = RegisterSerializer
+    permission_classes = [permissions.AllowAny]
 
-        username = data.get('username')
-        email = data.get('email')
-        password = data.get('password')
-        phone_number = data.get('phone_number')
-        country = data.get('country')
-        payout_address = data.get('payout_address')
-        referred_by_code = data.get('referred_by')
+    def perform_create(self, serializer):
+        # Extract referred_by from the request data
+        referred_by_code = self.request.data.get('referred_by')
+        print(f"--- PERFORM_CREATE TRIGGERED. REF CODE: {referred_by_code} ---")
 
-        print(f"--- REFERRED BY CODE EXTRACTED ---: {referred_by_code}")  # DEBUG LOG
+        with transaction.atomic():
+            # 1. Save the new user using the DRF serializer
+            new_user = serializer.save()
 
-        if User.objects.filter(username=username).exists():
-            return Response({'error': 'Username already taken'}, status=status.HTTP_400_BAD_REQUEST)
+            # 2. Process instant referral bonus if ref code was provided
+            if referred_by_code:
+                clean_ref = referred_by_code.strip()
+                
+                # Find the referrer case-insensitively by email or username
+                referrer = User.objects.filter(
+                    Q(email__iexact=clean_ref) | Q(username__iexact=clean_ref)
+                ).first()
 
-        if User.objects.filter(email=email).exists():
-            return Response({'error': 'Email already registered'}, status=status.HTTP_400_BAD_REQUEST)
+                print(f"--- REFERRER LOOKUP RESULT ---: {referrer}")
 
-        try:
-            with transaction.atomic():
-                # 1. Create the new user account
-                new_user = User.objects.create_user(
-                    username=username,
-                    email=email,
-                    password=password,
-                    phone_number=phone_number,
-                    country=country,
-                    usdt_trc20=payout_address
-                )
+                if referrer and referrer != new_user:
+                    # Link the referral relationship
+                    new_user.referred_by = referrer
+                    new_user.save(update_fields=['referred_by'])
 
-                # 2. Process instant referral bonus if ref code was provided
-                if referred_by_code:
-                    clean_ref = referred_by_code.strip()
-                    
-                    # Find the referrer case-insensitively by email or username
-                    referrer = User.objects.filter(
-                        Q(email__iexact=clean_ref) | Q(username__iexact=clean_ref)
-                    ).first()
+                    # Credit the referrer's balance and total referral commission earned
+                    referrer.balance += INSTANT_SIGNUP_BONUS
+                    referrer.referral_bonus_earned += INSTANT_SIGNUP_BONUS
+                    referrer.save(update_fields=['balance', 'referral_bonus_earned'])
 
-                    print(f"--- REFERRER FOUND IN DB ---: {referrer}")  # DEBUG LOG
-
-                    if referrer and referrer != new_user:
-                        # Link the referral relationship
-                        new_user.referred_by = referrer
-                        new_user.save(update_fields=['referred_by'])
-
-                        # Credit the referrer's balance and total referral commission earned
-                        referrer.balance += INSTANT_SIGNUP_BONUS
-                        referrer.referral_bonus_earned += INSTANT_SIGNUP_BONUS
-                        referrer.save(update_fields=['balance', 'referral_bonus_earned'])
-
-                        # Create an approved transaction log entry for transparency
-                        Transaction.objects.create(
-                            user=referrer,
-                            amount=INSTANT_SIGNUP_BONUS,
-                            type='REFERRAL_BONUS',
-                            status='APPROVED',
-                            method='SYSTEM_BONUS',
-                            description=f'Instant referral bonus for user registration: {new_user.email}'
-                        )
-                        print(f"--- BONUS SUCCESSFULLY CREDITED TO {referrer.email} ---")  # DEBUG LOG
-                    else:
-                        print("--- WARNING: Referrer match failed or referrer is new_user ---")
-
-        except Exception as e:
-            print(f"--- ERROR IN REGISTRATION ATOMIC BLOCK ---: {str(e)}")
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-        return Response({'message': 'Registration successful!'}, status=status.HTTP_201_CREATED)
+                    # Create an approved transaction log entry for transparency
+                    Transaction.objects.create(
+                        user=referrer,
+                        amount=INSTANT_SIGNUP_BONUS,
+                        type='REFERRAL_BONUS',
+                        status='APPROVED',
+                        method='SYSTEM_BONUS',
+                        description=f'Instant referral bonus for user registration: {new_user.email}'
+                    )
+                    print(f"--- $5.00 BONUS SUCCESSFULLY CREDITED TO {referrer.email} ---")
+                else:
+                    print("--- WARNING: Referrer match failed or referrer is new_user ---")
