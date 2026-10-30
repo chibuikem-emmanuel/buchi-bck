@@ -8,7 +8,7 @@ from django.contrib.auth import get_user_model
 from decimal import Decimal
 from django.db import transaction
 from django.db.models import Q
-from .models import Transaction
+from investments.models import Transaction
 
 from .serializers import CustomTokenObtainPairSerializer, RegisterSerializer, UserSerializer
 
