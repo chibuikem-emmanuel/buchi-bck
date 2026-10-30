@@ -61,6 +61,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'balance', 
             'active_investments', 'total_earned', 
+            'total_referrals', 'referral_bonus_earned',  # <--- ADDED HERE
             'btc_address', 'usdt_trc20', 'usdt_erc20', 'eth_address', 'bnb_address'
         ]
 
