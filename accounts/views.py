@@ -46,7 +46,6 @@ class RegisterView(generics.CreateAPIView):
     permission_classes = [permissions.AllowAny]
 
     def perform_create(self, serializer):
-        # Extract referred_by from the request data
         referred_by_code = self.request.data.get('referred_by')
         print(f"--- PERFORM_CREATE TRIGGERED. REF CODE: {referred_by_code} ---")
 
@@ -75,16 +74,16 @@ class RegisterView(generics.CreateAPIView):
                     referrer.referral_bonus_earned += INSTANT_SIGNUP_BONUS
                     referrer.save(update_fields=['balance', 'referral_bonus_earned'])
 
-                    # Create an approved transaction log entry for transparency
-                    Transaction.objects.create(
-                        user=referrer,
-                        amount=INSTANT_SIGNUP_BONUS,
-                        type='REFERRAL_BONUS',
-                        status='APPROVED',
-                        method='SYSTEM_BONUS',
-                        description=f'Instant referral bonus for user registration: {new_user.email}'
-                    )
-                    print(f"--- $5.00 BONUS SUCCESSFULLY CREDITED TO {referrer.email} ---")
+                    # Safely create transaction record without unsupported fields
+                    try:
+                        Transaction.objects.create(
+                            user=referrer,
+                            amount=INSTANT_SIGNUP_BONUS,
+                            status='APPROVED'
+                        )
+                        print(f"--- $5.00 BONUS SUCCESSFULLY CREDITED & LOGGED FOR {referrer.email} ---")
+                    except Exception as tx_err:
+                        print(f"--- WARNING: Bonus credited, but transaction log failed: {tx_err} ---")
                 else:
                     print("--- WARNING: Referrer match failed or referrer is new_user ---")
 
