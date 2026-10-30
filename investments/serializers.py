@@ -54,6 +54,7 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     active_investments = serializers.SerializerMethodField()
     total_earned = serializers.SerializerMethodField()
+    total_referrals = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -70,3 +71,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
     def get_total_earned(self, obj):
         # Sums completed profits or earnings from transactions
         return obj.transactions.filter(type='PROFIT', status='APPROVED').aggregate(Sum('amount'))['amount__sum'] or 0.00
+
+    def get_total_referrals(self, obj):
+        return obj.referrals.count()

@@ -10,6 +10,18 @@ class User(AbstractUser):
     total_earned = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     is_blacklisted = models.BooleanField(default=False)
 
+
+
+    # Referral system fields
+    referred_by = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='referrals'
+    )
+    referral_bonus_earned = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username']
 

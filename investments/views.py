@@ -380,3 +380,57 @@ class UserWithdrawalsView(APIView):
                 return Response({"success": True, "message": "Withdrawal request submitted successfully!"}, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
+class RegisterView(APIView):
+    def post(self, request):
+        data = request.data
+        username = data.get('username')
+        email = data.get('email')
+        password = data.get('password')
+        referred_by_code = data.get('referred_by')
+
+        if User.objects.filter(username=username).exists():
+            return Response({'error': 'Username already taken'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if User.objects.filter(email=email).exists():
+            return Response({'error': 'Email already registered'}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            # 1. Create the new user
+            new_user = User.objects.create_user(
+                username=username,
+                email=email,
+                password=password,
+                phone_number=data.get('phone_number', ''),
+                country=data.get('country', ''),
+                usdt_trc20=data.get('payout_address', '')
+            )
+
+            # 2. Process instant referral reward
+            if referred_by_code:
+                referrer = User.objects.filter(username__iexact=referred_by_code).first() or \
+                           User.objects.filter(email__iexact=referred_by_code).first()
+
+                if referrer and referrer != new_user:
+                    new_user.referred_by = referrer
+                    new_user.save(update_fields=['referred_by'])
+
+                    # Credit referrer instantly
+                    referrer.balance += INSTANT_SIGNUP_BONUS
+                    referrer.referral_bonus_earned += INSTANT_SIGNUP_BONUS
+                    referrer.save(update_fields=['balance', 'referral_bonus_earned'])
+
+                    # Create transaction log
+                    Transaction.objects.create(
+                        user=referrer,
+                        amount=INSTANT_SIGNUP_BONUS,
+                        type='REFERRAL_BONUS',
+                        status='APPROVED',
+                        method='SYSTEM_BONUS',
+                        description=f'Instant referral bonus for user registration: {new_user.username}'
+                    )
+
+        return Response({'message': 'Registration successful!'}, status=status.HTTP_201_CREATED)
