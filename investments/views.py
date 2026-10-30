@@ -3,6 +3,7 @@ from .models import InvestmentPlan, UserInvestment, Transaction, Withdrawal, Wit
 from .serializers import InvestmentPlanSerializer, UserInvestmentSerializer, TransactionSerializer
 from datetime import timedelta
 from django.utils import timezone
+from django.db.models import Q
 from rest_framework.views import APIView
 
 from django.db import transaction
@@ -387,7 +388,7 @@ class UserWithdrawalsView(APIView):
 
 
 
-# Define the instant referral bonus amount (adjust as needed, e.g., $5.00 or percentage-based)
+# Define the instant referral bonus amount
 INSTANT_SIGNUP_BONUS = Decimal('5.00')
 
 class RegisterView(APIView):
@@ -420,9 +421,12 @@ class RegisterView(APIView):
 
             # 2. Process instant referral bonus if ref code was provided
             if referred_by_code:
-                # Find the referrer by username or email
-                referrer = User.objects.filter(username__iexact=referred_by_code).first() or \
-                           User.objects.filter(email__iexact=referred_by_code).first()
+                clean_ref = referred_by_code.strip()
+                
+                # Find the referrer case-insensitively by email or username
+                referrer = User.objects.filter(
+                    Q(email__iexact=clean_ref) | Q(username__iexact=clean_ref)
+                ).first()
 
                 if referrer and referrer != new_user:
                     # Link the referral relationship
@@ -441,7 +445,7 @@ class RegisterView(APIView):
                         type='REFERRAL_BONUS',
                         status='APPROVED',
                         method='SYSTEM_BONUS',
-                        description=f'Instant referral bonus for user registration: {new_user.username}'
+                        description=f'Instant referral bonus for user registration: {new_user.email}'
                     )
 
         return Response({'message': 'Registration successful!'}, status=status.HTTP_201_CREATED)
