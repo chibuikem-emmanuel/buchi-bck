@@ -90,5 +90,11 @@ class WithdrawalRequestSerializer(serializers.ModelSerializer):
         read_only_fields = ['user', 'created_at']
 
     def get_wallet_address(self, obj):
-        # Pulls the user's saved wallet address matching the method
-        return obj.user.usdt_trc20 or 'N/A'
+        # Safely loops through possible wallet field names on the User model without crashing
+        user = obj.user
+        for field in ['usdt_trc20', 'wallet_address', 'usdt_address', 'payout_address']:
+            if hasattr(user, field):
+                val = getattr(user, field)
+                if val:
+                    return val
+        return 'N/A'
