@@ -83,18 +83,30 @@ class WithdrawalRequestSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username', read_only=True)
     user_email = serializers.EmailField(source='user.email', read_only=True)
     wallet_address = serializers.SerializerMethodField()
+    transaction_id = serializers.SerializerMethodField() # Or direct field if it exists on the model
 
     class Meta:
         model = WithdrawalRequest
-        fields = ['id', 'user', 'username', 'user_email', 'amount', 'method', 'wallet_address', 'status', 'created_at']
+        fields = [
+            'id', 'user', 'username', 'user_email', 'amount', 
+            'method', 'wallet_address', 'transaction_id', 'status', 'created_at'
+        ]
         read_only_fields = ['user', 'created_at']
 
     def get_wallet_address(self, obj):
-        # Safely loops through possible wallet field names on the User model without crashing
         user = obj.user
         for field in ['usdt_trc20', 'wallet_address', 'usdt_address', 'payout_address']:
             if hasattr(user, field):
                 val = getattr(user, field)
+                if val:
+                    return val
+        return 'N/A'
+
+    def get_transaction_id(self, obj):
+        # Check common field names for transaction hashes/references on the model
+        for field in ['transaction_id', 'tx_hash', 'reference', 'hash']:
+            if hasattr(obj, field):
+                val = getattr(obj, field)
                 if val:
                     return val
         return 'N/A'
