@@ -45,24 +45,24 @@ INSTANT_SIGNUP_BONUS = Decimal('5.00')
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
-    permission_classes = [permissions.AllowAny]  # Fixed typo here
+    permission_classes = [permissions.AllowAny]
 
     def perform_create(self, serializer):
         referred_by_code = self.request.data.get('referred_by')
-        print(f"--- PERFORM_CREATE TRIGGERED. REF CODE: {referred_by_code} ---")
+        print(f"--- PERFORM_CREATE TRIGGERED. REF ID: {referred_by_code} ---")
 
         with transaction.atomic():
             # 1. Save the new user using the DRF serializer
             new_user = serializer.save()
 
-            # 2. Process instant referral bonus if ref code was provided
+            # 2. Process instant referral bonus if ref ID was provided
             if referred_by_code:
-                clean_ref = referred_by_code.strip()
+                clean_ref = str(referred_by_code).strip()
+                referrer = None
                 
-                # Find the referrer case-insensitively by email or username
-                referrer = User.objects.filter(
-                    Q(email__iexact=clean_ref) | Q(username__iexact=clean_ref)
-                ).first()
+                # Check if the code is a valid number (User ID)
+                if clean_ref.isdigit():
+                    referrer = User.objects.filter(id=int(clean_ref)).first()
 
                 print(f"--- REFERRER LOOKUP RESULT ---: {referrer}")
 
@@ -83,7 +83,7 @@ class RegisterView(generics.CreateAPIView):
                             amount=INSTANT_SIGNUP_BONUS,
                             status='APPROVED'
                         )
-                        print(f"--- $5.00 BONUS SUCCESSFULLY CREDITED & LOGGED FOR {referrer.email} ---")
+                        print(f"--- $5.00 BONUS SUCCESSFULLY CREDITED & LOGGED FOR ID {referrer.id} ---")
                     except Exception as tx_err:
                         print(f"--- WARNING: Bonus credited, but transaction log failed: {tx_err} ---")
                 else:
