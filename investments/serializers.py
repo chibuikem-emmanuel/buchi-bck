@@ -55,6 +55,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     active_investments = serializers.SerializerMethodField()
     total_earned = serializers.SerializerMethodField()
     total_referrals = serializers.SerializerMethodField()
+    referral_bonus_earned = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
 
     class Meta:
         model = User

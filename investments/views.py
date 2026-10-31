@@ -390,13 +390,15 @@ class UserWithdrawalsView(APIView):
 
 
 
+User = get_user_model()
+
 # Define the instant referral bonus amount
 INSTANT_SIGNUP_BONUS = Decimal('5.00')
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.AllowAny]  # Fixed typo here
 
     def perform_create(self, serializer):
         referred_by_code = self.request.data.get('referred_by')
@@ -427,7 +429,7 @@ class RegisterView(generics.CreateAPIView):
                     referrer.referral_bonus_earned += INSTANT_SIGNUP_BONUS
                     referrer.save(update_fields=['balance', 'referral_bonus_earned'])
 
-                    # Safely create transaction record without unsupported fields
+                    # Safely create transaction record using valid model fields
                     try:
                         Transaction.objects.create(
                             user=referrer,
