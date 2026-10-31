@@ -14,6 +14,7 @@ from .admin_views import (
     AdminAnalyticsView,
     AdminDepositsView,
     AdminWithdrawalsView,
+    AdminWithdrawalDetailView
 )
 from .views import (
     InvestmentPlanListView,
@@ -60,4 +61,10 @@ urlpatterns = [
 
     path('admin/processings/', AdminProcessingsView.as_view(), name='admin-processings'),
     path('admin/processings/<int:pk>/', AdminProcessingsView.as_view(), name='admin-processing-detail'),
+
+
+    # ... your existing routes ...
+    path('admin/withdrawals/pending/', AdminWithdrawalListView.as_view(), name='admin-withdrawals'),
+    path('admin/withdrawals/<int:pk>/', AdminWithdrawalDetailView.as_view(), name='admin-withdrawal-detail'),
+    path('admin/withdrawals/<int:pk>/process/', AdminProcessWithdrawalView.as_view(), name='admin-process-withdrawal')
 ]

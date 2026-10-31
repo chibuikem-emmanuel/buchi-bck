@@ -753,3 +753,14 @@ class RegisterView(APIView):
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response({'message': 'Registration successful!'}, status=status.HTTP_201_CREATED)
+    
+
+
+class AdminWithdrawalDetailView(generics.RetrieveAPIView):
+    queryset = WithdrawalRequest.objects.all()
+    serializer_class = WithdrawalRequestSerializer
+    permission_classes = [permissions.IsAdminUser]
+    lookup_field = 'pk'
+
+
+

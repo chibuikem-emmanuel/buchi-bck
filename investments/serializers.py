@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import InvestmentPlan, User, UserInvestment, Transaction
+from .models import InvestmentPlan, User, UserInvestment, Transaction, WithdrawalRequest
 from django.db.models import Sum, Q
 
 class InvestmentPlanSerializer(serializers.ModelSerializer):
@@ -76,3 +76,19 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
     def get_total_referrals(self, obj):
         return obj.referrals.count()
+
+
+
+class WithdrawalRequestSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username', read_only=True)
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    wallet_address = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WithdrawalRequest
+        fields = ['id', 'user', 'username', 'user_email', 'amount', 'method', 'wallet_address', 'status', 'created_at']
+        read_only_fields = ['user', 'created_at']
+
+    def get_wallet_address(self, obj):
+        # Pulls the user's saved wallet address matching the method
+        return obj.user.usdt_trc20 or 'N/A'
