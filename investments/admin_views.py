@@ -6,7 +6,7 @@ from .models import Transaction, WithdrawalRequest, SystemSetting, InvestmentPla
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import InvestmentPlanSerializer
+from .serializers import InvestmentPlanSerializer, WithdrawalRequestSerializer
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from .models import ProcessingGateway
 from .models import Deposit, Withdrawal
