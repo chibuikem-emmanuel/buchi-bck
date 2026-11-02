@@ -52,30 +52,54 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
-    active_investments = serializers.SerializerMethodField()
+    deposited = serializers.SerializerMethodField()
+    total_deposit = serializers.SerializerMethodField()
+    active_investment = serializers.SerializerMethodField()
     total_earned = serializers.SerializerMethodField()
+    withdrew_total = serializers.SerializerMethodField()
     total_referrals = serializers.SerializerMethodField()
-    referral_bonus_earned = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    referral_bonus_earned = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True, default=0.00)
 
     class Meta:
         model = User
         fields = [
             'id', 'username', 'email', 'balance', 
-            'active_investments', 'total_earned', 
-            'total_referrals', 'referral_bonus_earned',  # <--- ADDED HERE
+            'deposited', 'total_deposit', 'active_investment', 
+            'total_earned', 'withdrew_total',
+            'total_referrals', 'referral_bonus_earned',
             'btc_address', 'usdt_trc20', 'usdt_erc20', 'eth_address', 'bnb_address'
         ]
 
-    def get_active_investments(self, obj):
-        # Sums active user investments (adjust filter status based on your UserInvestment model)
-        return obj.userinvestments.filter(is_completed=False).aggregate(Sum('amount'))['amount__sum'] or 0.00
+    def get_deposited(self, obj):
+        # Sums all approved deposits
+        return obj.deposits.filter(status='APPROVED').aggregate(Sum('amount'))['amount__sum'] or 0.00
+
+    def get_total_deposit(self, obj):
+        return self.get_deposited(obj)
+
+    def get_active_investment(self, obj):
+        # Sums capital currently locked in active plans
+        investments = getattr(obj, 'active_investments', None) or getattr(obj, 'userinvestments', None)
+        if investments:
+            return investments.filter(status='ACTIVE').aggregate(Sum('amount'))['amount__sum'] or 0.00
+        return 0.00
 
     def get_total_earned(self, obj):
-        # Sums completed profits or earnings from transactions
-        return obj.transactions.filter(type='PROFIT', status='APPROVED').aggregate(Sum('amount'))['amount__sum'] or 0.00
+        # Accumulates real-time daily profits across active investments
+        investments = getattr(obj, 'active_investments', None) or getattr(obj, 'userinvestments', None)
+        earned = 0.00
+        if investments:
+            for inv in investments.filter(status='ACTIVE'):
+                if hasattr(inv, 'calculate_accumulated_profit'):
+                    earned += float(inv.calculate_accumulated_profit())
+        return earned
+
+    def get_withdrew_total(self, obj):
+        # Sums all approved payouts
+        return obj.withdrawals.filter(status='APPROVED').aggregate(Sum('amount'))['amount__sum'] or 0.00
 
     def get_total_referrals(self, obj):
-        return obj.referrals.count()
+        return obj.referrals.count() if hasattr(obj, 'referrals') else 0
 
 
 
