@@ -454,41 +454,48 @@ class UserDashboardStatsView(APIView):
         user = request.user
         
         try:
-            # 1. Total Approved Deposits
+            # 1. Total Approved Deposits (Shows in 'Deposited' & 'Total Deposit')
             approved_deposits = Deposit.objects.filter(user=user, status='APPROVED')
             total_deposit = approved_deposits.aggregate(total=Sum('amount'))['total'] or 0.00
             
-            # 2. Active Investments
+            # 2. Active Investments (Shows capital currently locked in plans)
             active_investments_qs = ActiveInvestment.objects.filter(user=user, status='ACTIVE')
             active_investment_total = active_investments_qs.aggregate(total=Sum('amount'))['total'] or 0.00
             
-            # 3. Safe accumulation calculation for Earned
+            # 3. Expired Investments (Principal released back to balance)
+            expired_investments_qs = ActiveInvestment.objects.filter(user=user, status='EXPIRED')
+            expired_principal = expired_investments_qs.aggregate(total=Sum('amount'))['total'] or 0.00
+            
+            # 4. Total Earned (Daily profits accumulated across all plans)
             total_earned = 0.00
-            for inv in active_investments_qs:
+            all_investments = ActiveInvestment.objects.filter(user=user)
+            for inv in all_investments:
+                # Ensure expiry check runs so profits freeze correctly upon completion
+                if hasattr(inv, 'check_and_update_expiry'):
+                    inv.check_and_update_expiry()
                 if hasattr(inv, 'calculate_accumulated_profit'):
                     total_earned += float(inv.calculate_accumulated_profit())
             
-            # 4. Total Withdrawals
+            # 5. Total Approved Withdrawals
             approved_withdrawals = Withdrawal.objects.filter(user=user, status='APPROVED')
             withdrew_total = approved_withdrawals.aggregate(total=Sum('amount'))['total'] or 0.00
             
-            # 5. Expired Principal returning to balance
-            expired_principal = ActiveInvestment.objects.filter(user=user, status='EXPIRED').aggregate(total=Sum('amount'))['total'] or 0.00
-            
-            # 6. Balance Calculation: (Deposited + Earned + Expired Principal) - Withdrawn Total
-            balance = (float(total_deposit) + float(total_earned) + float(expired_principal)) - float(withdrew_total)
+            # 6. Correct Lifecycle Balance:
+            # While active, principal is locked in 'Active Investment'. 
+            # Balance consists of accumulated earnings + released expired principal minus withdrawals.
+            balance = (float(total_earned) + float(expired_principal)) - float(withdrew_total)
             balance = max(0.0, balance)
 
             return Response({
                 "username": user.username,
                 "deposited": float(total_deposit),
-                "balance": float(balance),
-                "earned": float(total_earned),
                 "total_deposit": float(total_deposit),
-                "withdrew_total": float(withdrew_total),
                 "active_investment": float(active_investment_total),
                 "active_investments": float(active_investment_total),
+                "earned": float(total_earned),
                 "total_earned": float(total_earned),
+                "withdrew_total": float(withdrew_total),
+                "balance": float(balance),
                 "ref_bonus": 0.00
             }, status=status.HTTP_200_OK)
 
