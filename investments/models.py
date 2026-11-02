@@ -177,7 +177,7 @@ class ActiveInvestment(models.Model):
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     daily_profit_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=4.00)
     duration_days = models.IntegerField(default=3)
-    status = models.CharField(max_digits=20, choices=STATUS_CHOICES, default='ACTIVE')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ACTIVE')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def check_and_update_expiry(self):
