@@ -763,4 +763,8 @@ class AdminWithdrawalDetailView(generics.RetrieveAPIView):
     lookup_field = 'pk'
 
 
+# class AdminDepositDetailView(generics.RetrieveAPIView):
+#     permission_classes = [IsAdminUser] # Or your custom admin permission
+#     queryset = DepositRequest.objects.all()
+#     serializer_class = DepositRequestSerializer
 

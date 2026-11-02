@@ -2,6 +2,9 @@ from django.db import models
 from django.contrib.auth import get_user_model
 from decimal import Decimal
 from django.conf import settings
+from django.db import models
+from django.contrib.auth.models import User
+from django.utils import timezone
 
 
 
@@ -157,3 +160,40 @@ class Withdrawal(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+
+
+
+
+
+
+class ActiveInvestment(models.Model):
+    STATUS_CHOICES = (
+        ('ACTIVE', 'Active'),
+        ('EXPIRED', 'Expired'),
+    )
+    
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='active_investments')
+    plan = models.ForeignKey('InvestmentPlan', on_delete=models.SET_NULL, null=True, blank=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    daily_profit_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=4.00)
+    duration_days = models.IntegerField(default=3)
+    status = models.CharField(max_digits=20, choices=STATUS_CHOICES, default='ACTIVE')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def check_and_update_expiry(self):
+        """Automatically expires the investment and returns principal if duration has passed."""
+        if self.status == 'ACTIVE':
+            delta = timezone.now() - self.created_at
+            if delta.days >= self.duration_days:
+                self.status = 'EXPIRED'
+                self.save()
+        return self.status
+
+    def calculate_accumulated_profit(self):
+        """Calculates total profit earned so far based on days elapsed."""
+        self.check_and_update_expiry()
+        delta = timezone.now() - self.created_at
+        days_elapsed = min(delta.days, self.duration_days)
+        
+        daily_profit = float(self.amount) * (float(self.daily_profit_percentage) / 100.0)
+        return round(daily_profit * days_elapsed, 2)

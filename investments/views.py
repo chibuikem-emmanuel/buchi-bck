@@ -1,5 +1,5 @@
 from rest_framework import generics, permissions, serializers
-from .models import InvestmentPlan, UserInvestment, Transaction, Withdrawal, WithdrawalRequest
+from .models import InvestmentPlan, UserInvestment, Transaction, Withdrawal, WithdrawalRequest, Deposit, ActiveInvestment
 from .serializers import InvestmentPlanSerializer, UserInvestmentSerializer, TransactionSerializer
 from datetime import timedelta
 from django.utils import timezone
@@ -16,6 +16,8 @@ from rest_framework.response import Response
 from .models import Transaction, InvestmentPlan, WithdrawalRequest, Deposit
 from .serializers import TransactionSerializer, InvestmentPlanSerializer
 from django.contrib.auth import get_user_model
+from django.db.models import Sum, Q
+from rest_framework.permissions import IsAuthenticated
 
 User = get_user_model()
 
@@ -441,3 +443,54 @@ class RegisterView(generics.CreateAPIView):
                         print(f"--- WARNING: Bonus credited, but transaction log failed: {tx_err} ---")
                 else:
                     print("--- WARNING: Referrer match failed or referrer is new_user ---")
+
+
+
+
+class UserDashboardStatsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        
+        try:
+            # 1. Total Approved Deposits
+            approved_deposits = Deposit.objects.filter(user=user, status='APPROVED')
+            total_deposit = approved_deposits.aggregate(total=Sum('amount'))['total'] or 0.00
+            
+            # 2. Active Investments
+            active_investments_qs = ActiveInvestment.objects.filter(user=user, status='ACTIVE')
+            active_investment_total = active_investments_qs.aggregate(total=Sum('amount'))['total'] or 0.00
+            
+            # 3. Safe accumulation calculation for Earned
+            total_earned = 0.00
+            for inv in active_investments_qs:
+                if hasattr(inv, 'calculate_accumulated_profit'):
+                    total_earned += float(inv.calculate_accumulated_profit())
+            
+            # 4. Total Withdrawals
+            approved_withdrawals = Withdrawal.objects.filter(user=user, status='APPROVED')
+            withdrew_total = approved_withdrawals.aggregate(total=Sum('amount'))['total'] or 0.00
+            
+            # 5. Expired Principal returning to balance
+            expired_principal = ActiveInvestment.objects.filter(user=user, status='EXPIRED').aggregate(total=Sum('amount'))['total'] or 0.00
+            
+            # 6. Balance Calculation: (Deposited + Earned + Expired Principal) - Withdrawn Total
+            balance = (float(total_deposit) + float(total_earned) + float(expired_principal)) - float(withdrew_total)
+            balance = max(0.0, balance)
+
+            return Response({
+                "username": user.username,
+                "deposited": float(total_deposit),
+                "balance": float(balance),
+                "earned": float(total_earned),
+                "total_deposit": float(total_deposit),
+                "withdrew_total": float(withdrew_total),
+                "active_investment": float(active_investment_total),
+                "active_investments": float(active_investment_total),
+                "total_earned": float(total_earned),
+                "ref_bonus": 0.00
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
