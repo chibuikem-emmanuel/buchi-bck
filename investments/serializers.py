@@ -58,6 +58,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     total_earned = serializers.SerializerMethodField()
     withdrew_total = serializers.SerializerMethodField()
     total_referrals = serializers.SerializerMethodField()
+    balance = serializers.SerializerMethodField() # Dynamic balance following your investment lifecycle
     referral_bonus_earned = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True, default=0.00)
 
     class Meta:
@@ -72,7 +73,8 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
     def get_deposited(self, obj):
         # Sums all approved deposits
-        return obj.deposits.filter(status='APPROVED').aggregate(Sum('amount'))['amount__sum'] or 0.00
+        total = obj.deposits.filter(status='APPROVED').aggregate(Sum('amount'))['amount__sum']
+        return float(total or 0.00)
 
     def get_total_deposit(self, obj):
         return self.get_deposited(obj)
@@ -81,7 +83,8 @@ class UserProfileSerializer(serializers.ModelSerializer):
         # Sums capital currently locked in active plans
         investments = getattr(obj, 'active_investments', None) or getattr(obj, 'userinvestments', None)
         if investments:
-            return investments.filter(status='ACTIVE').aggregate(Sum('amount'))['amount__sum'] or 0.00
+            total = investments.filter(status='ACTIVE').aggregate(Sum('amount'))['amount__sum']
+            return float(total or 0.00)
         return 0.00
 
     def get_total_earned(self, obj):
@@ -91,15 +94,40 @@ class UserProfileSerializer(serializers.ModelSerializer):
         if investments:
             for inv in investments.filter(status='ACTIVE'):
                 if hasattr(inv, 'calculate_accumulated_profit'):
-                    earned += float(inv.calculate_accumulated_profit())
-        return earned
+                    profit = inv.calculate_accumulated_profit()
+                    earned += float(profit or 0.00)
+        return float(earned)
 
     def get_withdrew_total(self, obj):
         # Sums all approved payouts
-        return obj.withdrawals.filter(status='APPROVED').aggregate(Sum('amount'))['amount__sum'] or 0.00
+        total = obj.withdrawals.filter(status='APPROVED').aggregate(Sum('amount'))['amount__sum']
+        return float(total or 0.00)
 
     def get_total_referrals(self, obj):
         return obj.referrals.count() if hasattr(obj, 'referrals') else 0
+
+    def get_balance(self, obj):
+        """
+        Investment Lifecycle Balance Logic:
+        - When an investment is ACTIVE, its principal is locked in active_investment and daily earnings accrue in total_earned.
+        - When an investment EXPIRES, its principal returns to the user's available balance.
+        - Balance = (Total Lifetime Deposits + Expired Principals + Real-time Earnings) - Total Withdrawals
+        """
+        deposited = self.get_deposited(obj)
+        earned = self.get_total_earned(obj)
+        withdrawn = self.get_withdrew_total(obj)
+
+        # Calculate principal from expired investments that have returned to the user
+        expired_principal = 0.00
+        investments = getattr(obj, 'active_investments', None) or getattr(obj, 'userinvestments', None)
+        if investments:
+            expired_invs = investments.filter(status='EXPIRED')
+            expired_total = expired_invs.aggregate(Sum('amount'))['amount__sum']
+            expired_principal = float(expired_total or 0.00)
+
+        # Compute dynamic live balance
+        calculated_balance = (deposited + expired_principal + earned) - withdrawn
+        return float(max(calculated_balance, 0.00))
 
 
 
