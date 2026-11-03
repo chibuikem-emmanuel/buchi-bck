@@ -458,11 +458,11 @@ class UserDashboardStatsView(APIView):
             approved_deposits = Deposit.objects.filter(user=user, status='APPROVED')
             total_deposit = approved_deposits.aggregate(total=Sum('amount'))['total'] or 0.00
             
-            # 2. Active Investments (Shows capital currently locked in active plans)
+            # 2. Active Investments (Shows capital currently locked in plans)
             active_investments_qs = ActiveInvestment.objects.filter(user=user, status='ACTIVE')
             active_investment_total = active_investments_qs.aggregate(total=Sum('amount'))['total'] or 0.00
             
-            # 3. Expired Investments (Principal released back to available balance upon completion)
+            # 3. Expired Investments (Principal released back upon completion)
             expired_investments_qs = ActiveInvestment.objects.filter(user=user, status='EXPIRED')
             expired_principal = expired_investments_qs.aggregate(total=Sum('amount'))['total'] or 0.00
             
@@ -470,7 +470,6 @@ class UserDashboardStatsView(APIView):
             total_earned = 0.00
             all_investments = ActiveInvestment.objects.filter(user=user)
             for inv in all_investments:
-                # Run expiry check so completed plans transition to EXPIRED and freeze earnings
                 if hasattr(inv, 'check_and_update_expiry'):
                     inv.check_and_update_expiry()
                 if hasattr(inv, 'calculate_accumulated_profit'):
@@ -480,10 +479,10 @@ class UserDashboardStatsView(APIView):
             approved_withdrawals = Withdrawal.objects.filter(user=user, status='APPROVED')
             withdrew_total = approved_withdrawals.aggregate(total=Sum('amount'))['total'] or 0.00
             
-            # 6. Correct Lifecycle Balance:
-            # While active, principal is locked in 'Active Investment'. 
-            # Available balance = Accumulated Earnings + Released Expired Principals - Total Withdrawals.
-            calculated_balance = (float(total_earned) + float(expired_principal)) - float(withdrew_total)
+            # 6. Safe Balance: Combines user.balance database field + earnings + expired capital 
+            # (Ensures balance never drops blank when a plan is newly activated)
+            base_balance = float(getattr(user, 'balance', 0.00))
+            calculated_balance = base_balance + float(total_earned) + float(expired_principal)
             balance = max(0.0, calculated_balance)
 
             return Response({
