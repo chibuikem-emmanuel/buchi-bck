@@ -500,3 +500,53 @@ class UserDashboardStatsView(APIView):
 
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class UserInvestPlanView(generics.GenericAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        try:
+            plan_id = request.data.get('plan_id')
+            amount = Decimal(str(request.data.get('amount', 0)))
+
+            if amount <= 0:
+                return Response({'error': 'Invalid investment amount.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            if request.user.balance < amount:
+                return Response({'error': 'Insufficient balance.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            plan = InvestmentPlan.objects.filter(id=plan_id).first()
+            if not plan:
+                return Response({'error': 'Plan not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+            # 1. Deduct from user balance
+            request.user.balance -= amount
+            request.user.save()
+
+            # 2. CREATE THE ACTIVE INVESTMENT (This is what makes your dashboard show Active Investment!)
+            ActiveInvestment.objects.create(
+                user=request.user,
+                plan=plan,
+                amount=amount,
+                daily_profit_percentage=getattr(plan, 'daily_profit_percentage', 4.00),
+                duration_days=getattr(plan, 'duration_days', 3),
+                status='ACTIVE'
+            )
+
+            # 3. Log transaction
+            Transaction.objects.create(
+                user=request.user,
+                transaction_type='INVESTMENT',
+                amount=amount,
+                status='APPROVED'
+            )
+
+            return Response({
+                'success': True,
+                'message': 'Plan activated successfully!',
+                'new_balance': str(request.user.balance)
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)

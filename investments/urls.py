@@ -21,6 +21,7 @@ from .views import (
     UserDashboardStatsView,
     UserDepositCreateView,
     UserDepositsView,
+    UserInvestPlanView,
     UserWithdrawalCreateView,
     UserTransactionListView,
     UserWithdrawalsView,
@@ -75,4 +76,6 @@ urlpatterns = [
     path('user/deposits/', UserDepositsView.as_view()),
     path('user/withdrawals/', UserWithdrawalsView.as_view()),
     # ... rest of your URLs
+
+    path('invest/', UserInvestPlanView.as_view(), name='user-invest'),
 ]
