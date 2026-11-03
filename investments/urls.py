@@ -71,7 +71,7 @@ urlpatterns = [
 
 
     # User routes
-    path('accounts/profile/', UserDashboardStatsView.as_view(), name='user-profile'), # <-- ADD THIS LINE
+    path('user/profile/', UserDashboardStatsView.as_view(), name='user-profile'), # <-- ADD THIS LINE
     path('user/deposits/', UserDepositsView.as_view()),
     path('user/withdrawals/', UserWithdrawalsView.as_view()),
     # ... rest of your URLs
