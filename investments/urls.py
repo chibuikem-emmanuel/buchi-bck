@@ -18,6 +18,7 @@ from .admin_views import (
 )
 from .views import (
     InvestmentPlanListView,
+    UserDashboardStatsView,
     UserDepositCreateView,
     UserDepositsView,
     UserWithdrawalCreateView,
@@ -66,5 +67,12 @@ urlpatterns = [
     # ... your existing routes ...
     path('admin/withdrawals/pending/', AdminWithdrawalListView.as_view(), name='admin-withdrawals'),
     path('admin/withdrawals/<int:pk>/', AdminWithdrawalDetailView.as_view(), name='admin-withdrawal-detail'),
-    path('admin/withdrawals/<int:pk>/process/', AdminProcessWithdrawalView.as_view(), name='admin-process-withdrawal')
+    path('admin/withdrawals/<int:pk>/process/', AdminProcessWithdrawalView.as_view(), name='admin-process-withdrawal'),
+
+
+    # User routes
+    path('accounts/profile/', UserDashboardStatsView.as_view(), name='user-profile'), # <-- ADD THIS LINE
+    path('user/deposits/', UserDepositsView.as_view()),
+    path('user/withdrawals/', UserWithdrawalsView.as_view()),
+    # ... rest of your URLs
 ]
