@@ -540,7 +540,7 @@ class UserInvestPlanView(generics.GenericAPIView):
             is_from_balance = (payment_method == 'Account Balance')
 
             if is_from_balance:
-                # Reinvestment: User must have enough internal balance, and it activates instantly without admin approval
+                # Reinvestment: User must have enough internal balance, activates instantly
                 if request.user.balance < amount:
                     return Response({'error': 'Insufficient account balance for this reinvestment.'}, status=status.HTTP_400_BAD_REQUEST)
                 
@@ -558,7 +558,7 @@ class UserInvestPlanView(generics.GenericAPIView):
                     status='ACTIVE'
                 )
 
-                # Log transaction
+                # Log transaction as APPROVED
                 Transaction.objects.create(
                     user=request.user,
                     transaction_type='REINVESTMENT',
@@ -568,14 +568,13 @@ class UserInvestPlanView(generics.GenericAPIView):
 
                 return Response({
                     'success': True,
-                    'message': 'Investment successfully activated from your balance!',
+                    'message': 'Plan activated successfully!',
                     'active_investment_id': active_investment.id,
                     'new_balance': str(request.user.balance)
                 }, status=status.HTTP_201_CREATED)
 
             else:
-                # Normal Flow for New Users / Crypto Gateways:
-                # Allows submission even with 0 balance so they can proceed to fund/deposit instructions
+                # Normal Flow for Crypto Gateways:
                 Transaction.objects.create(
                     user=request.user,
                     transaction_type='INVESTMENT',
