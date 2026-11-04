@@ -517,26 +517,28 @@ class UserInvestPlanView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
+        """Handles selecting an investment plan, locking capital, and reflecting in analytics."""
         try:
             plan_id = request.data.get('plan_id')
             amount = Decimal(str(request.data.get('amount', 0)))
+            payment_method = request.data.get('payment_method', '').strip()
 
             if amount <= 0:
                 return Response({'error': 'Invalid investment amount.'}, status=status.HTTP_400_BAD_REQUEST)
 
             if request.user.balance < amount:
-                return Response({'error': 'Insufficient balance.'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'error': 'Insufficient balance for this investment plan.'}, status=status.HTTP_400_BAD_REQUEST)
 
             plan = InvestmentPlan.objects.filter(id=plan_id).first()
             if not plan:
-                return Response({'error': 'Plan not found.'}, status=status.HTTP_404_NOT_FOUND)
+                return Response({'error': 'Investment plan not found.'}, status=status.HTTP_404_NOT_FOUND)
 
             # 1. Deduct from user balance
             request.user.balance -= amount
             request.user.save()
 
-            # 2. CREATE THE ACTIVE INVESTMENT (This is what makes your dashboard show Active Investment!)
-            ActiveInvestment.objects.create(
+            # 2. Create the Active Investment record (Lights up 'Active Investment' analytics)
+            active_investment = ActiveInvestment.objects.create(
                 user=request.user,
                 plan=plan,
                 amount=amount,
@@ -545,17 +547,19 @@ class UserInvestPlanView(generics.GenericAPIView):
                 status='ACTIVE'
             )
 
-            # 3. Log transaction
+            # 3. Log transaction (marks as REINVESTMENT if paid via account balance)
+            txn_type = 'REINVESTMENT' if payment_method == 'Account Balance' else 'INVESTMENT'
             Transaction.objects.create(
                 user=request.user,
-                transaction_type='INVESTMENT',
+                transaction_type=txn_type,
                 amount=amount,
                 status='APPROVED'
             )
 
             return Response({
                 'success': True,
-                'message': 'Plan activated successfully!',
+                'message': 'Investment plan activated successfully!',
+                'active_investment_id': active_investment.id,
                 'new_balance': str(request.user.balance)
             }, status=status.HTTP_201_CREATED)
 
