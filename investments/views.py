@@ -195,21 +195,32 @@ class UserDepositCreateView(generics.GenericAPIView):
             if amount <= 0:
                 return Response({'error': 'Invalid amount'}, status=status.HTTP_400_BAD_REQUEST)
             
-            # Immediately credit user balance upon deposit submission for seamless testing
+            # 1. Credit user balance
             request.user.balance += amount
             request.user.save()
 
-            txn = Transaction.objects.create(
+            # 2. Create Transaction record
+            Transaction.objects.create(
                 user=request.user,
                 transaction_type='DEPOSIT',
                 amount=amount,
                 status='APPROVED'
             )
+
+            # 3. CRITICAL: Create the Deposit record so UserDashboardStatsView can count it!
+            Deposit.objects.create(
+                user=request.user,
+                amount=amount,
+                status='APPROVED',
+                gateway=request.data.get('gateway', 'Manual')
+            )
+
             return Response({
                 'success': True, 
                 'message': 'Deposit successful! Balance updated.', 
                 'new_balance': str(request.user.balance)
-            })
+            }, status=status.HTTP_201_CREATED)
+
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -545,6 +556,46 @@ class UserInvestPlanView(generics.GenericAPIView):
             return Response({
                 'success': True,
                 'message': 'Plan activated successfully!',
+                'new_balance': str(request.user.balance)
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+class UserDepositCreateView(generics.GenericAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        try:
+            amount = Decimal(str(request.data.get('amount', 0)))
+            if amount <= 0:
+                return Response({'error': 'Invalid amount'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # 1. Credit user balance
+            request.user.balance += amount
+            request.user.save()
+
+            # 2. Create Transaction record
+            Transaction.objects.create(
+                user=request.user,
+                transaction_type='DEPOSIT',
+                amount=amount,
+                status='APPROVED'
+            )
+
+            # 3. Create Deposit record so analytics track total deposited
+            Deposit.objects.create(
+                user=request.user,
+                amount=amount,
+                status='APPROVED',
+                gateway=request.data.get('gateway', 'Manual')
+            )
+
+            return Response({
+                'success': True, 
+                'message': 'Deposit successful! Balance updated.', 
                 'new_balance': str(request.user.balance)
             }, status=status.HTTP_201_CREATED)
 
