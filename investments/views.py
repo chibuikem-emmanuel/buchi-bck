@@ -517,7 +517,6 @@ class UserInvestPlanView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        """Handles selecting an investment plan, locking capital, and reflecting in analytics."""
         try:
             plan_id = request.data.get('plan_id')
             amount = Decimal(str(request.data.get('amount', 0)))
@@ -526,42 +525,69 @@ class UserInvestPlanView(generics.GenericAPIView):
             if amount <= 0:
                 return Response({'error': 'Invalid investment amount.'}, status=status.HTTP_400_BAD_REQUEST)
 
-            if request.user.balance < amount:
-                return Response({'error': 'Insufficient balance for this investment plan.'}, status=status.HTTP_400_BAD_REQUEST)
-
+            # 1. Fetch Plan & Validate Min/Max Bounds
             plan = InvestmentPlan.objects.filter(id=plan_id).first()
             if not plan:
                 return Response({'error': 'Investment plan not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-            # 1. Deduct from user balance
-            request.user.balance -= amount
-            request.user.save()
+            if amount < plan.min_deposit:
+                return Response({'error': f'Amount is below the minimum deposit of ${plan.min_deposit} for this plan.'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # 2. Create the Active Investment record (Lights up 'Active Investment' analytics)
-            active_investment = ActiveInvestment.objects.create(
-                user=request.user,
-                plan=plan,
-                amount=amount,
-                daily_profit_percentage=getattr(plan, 'daily_profit_percentage', 4.00),
-                duration_days=getattr(plan, 'duration_days', 3),
-                status='ACTIVE'
-            )
+            if plan.max_deposit and amount > plan.max_deposit:
+                return Response({'error': f'Amount exceeds the maximum deposit of ${plan.max_deposit} for this plan.'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # 3. Log transaction (marks as REINVESTMENT if paid via account balance)
-            txn_type = 'REINVESTMENT' if payment_method == 'Account Balance' else 'INVESTMENT'
-            Transaction.objects.create(
-                user=request.user,
-                transaction_type=txn_type,
-                amount=amount,
-                status='APPROVED'
-            )
+            # 2. Handle Payment Method Rules
+            is_from_balance = (payment_method == 'Account Balance')
 
-            return Response({
-                'success': True,
-                'message': 'Investment plan activated successfully!',
-                'active_investment_id': active_investment.id,
-                'new_balance': str(request.user.balance)
-            }, status=status.HTTP_201_CREATED)
+            if is_from_balance:
+                # Reinvestment: User must have enough internal balance, and it activates instantly without admin approval
+                if request.user.balance < amount:
+                    return Response({'error': 'Insufficient account balance for this reinvestment.'}, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Deduct balance immediately
+                request.user.balance -= amount
+                request.user.save()
+
+                # Activate investment instantly
+                active_investment = ActiveInvestment.objects.create(
+                    user=request.user,
+                    plan=plan,
+                    amount=amount,
+                    daily_profit_percentage=getattr(plan, 'daily_profit_percentage', 4.00),
+                    duration_days=getattr(plan, 'duration_days', 3),
+                    status='ACTIVE'
+                )
+
+                # Log transaction
+                Transaction.objects.create(
+                    user=request.user,
+                    transaction_type='REINVESTMENT',
+                    amount=amount,
+                    status='APPROVED'
+                )
+
+                return Response({
+                    'success': True,
+                    'message': 'Investment successfully activated from your balance!',
+                    'active_investment_id': active_investment.id,
+                    'new_balance': str(request.user.balance)
+                }, status=status.HTTP_201_CREATED)
+
+            else:
+                # Normal Flow for New Users / Crypto Gateways:
+                # Allows submission even with 0 balance so they can proceed to fund/deposit instructions
+                Transaction.objects.create(
+                    user=request.user,
+                    transaction_type='INVESTMENT',
+                    amount=amount,
+                    status='PENDING'
+                )
+
+                return Response({
+                    'success': True,
+                    'message': 'Investment order initialized. Please complete your deposit.',
+                    'pending': True
+                }, status=status.HTTP_201_CREATED)
 
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
