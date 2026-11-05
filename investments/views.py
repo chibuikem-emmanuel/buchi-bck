@@ -478,7 +478,7 @@ class UserDashboardStatsView(APIView):
             active_investments_qs = ActiveInvestment.objects.filter(user=user, status='ACTIVE')
             active_investment_total = active_investments_qs.aggregate(total=Sum('amount'))['total'] or 0.00
             
-            # 4. Total Earned (Daily profits accumulated across all plans for analytics display)
+            # 4. Total Earned (Daily profits accumulated across all active/expired plans for analytics)
             total_earned = 0.00
             for inv in all_investments:
                 total_earned += float(inv.calculate_accumulated_profit() or 0.00)
@@ -487,8 +487,7 @@ class UserDashboardStatsView(APIView):
             approved_withdrawals = Withdrawal.objects.filter(user=user, status='APPROVED')
             withdrew_total = approved_withdrawals.aggregate(total=Sum('amount'))['total'] or 0.00
             
-            # 6. Balance: Strictly reflects the database user balance 
-            # (which automatically receives returned principals only when plans expire)
+            # 6. Spendable Balance (Contains initial funds + returned principals upon plan expiration)
             balance = float(getattr(user, 'balance', 0.00))
 
             return Response({

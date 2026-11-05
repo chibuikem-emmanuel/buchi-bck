@@ -96,9 +96,9 @@ class Deposit(models.Model):
     
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='deposits')
     plan = models.ForeignKey('InvestmentPlan', on_delete=models.SET_NULL, null=True, blank=True, related_name='deposits')
-    gateway = models.CharField(max_length=100) # e.g. "USDT TRC20"
+    gateway = models.CharField(max_length=100)  # e.g., "USDT TRC20" or "Account Balance"
     amount = models.DecimalField(max_digits=12, decimal_places=2)
-    transaction_id = models.CharField(max_length=100, unique=True)
+    transaction_id = models.CharField(max_length=100, unique=True, blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -112,9 +112,8 @@ class Deposit(models.Model):
             old_instance = Deposit.objects.filter(pk=self.pk).first()
             if old_instance and old_instance.status != 'APPROVED' and self.status == 'APPROVED':
                 
-                # Admin just approved the deposit!
                 if self.plan:
-                    # 1. If a plan was selected, lock the capital into an ActiveInvestment
+                    # 1. If a plan is attached, lock capital into an ActiveInvestment
                     ActiveInvestment.objects.create(
                         user=self.user,
                         plan=self.plan,
@@ -124,7 +123,7 @@ class Deposit(models.Model):
                         status='ACTIVE'
                     )
                     
-                    # Log the transaction
+                    # Log transaction
                     Transaction.objects.create(
                         user=self.user,
                         transaction_type='INVESTMENT',
@@ -132,7 +131,7 @@ class Deposit(models.Model):
                         status='APPROVED'
                     )
                 else:
-                    # 2. If it's a general wallet funding deposit with no plan, credit the user balance
+                    # 2. General wallet funding with no plan -> credit user balance
                     self.user.balance += self.amount
                     self.user.save()
 
@@ -231,7 +230,7 @@ class ActiveInvestment(models.Model):
                 self.status = 'EXPIRED'
                 self.save()
                 
-                # Return principal back to user balance exactly once upon expiration
+                # Release principal back to spendable user balance exactly once upon expiration
                 if self.user and self.amount:
                     self.user.balance += self.amount
                     self.user.save()
