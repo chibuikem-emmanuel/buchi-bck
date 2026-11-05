@@ -474,11 +474,11 @@ class UserDashboardStatsView(APIView):
             for inv in all_investments:
                 inv.check_and_update_expiry()
             
-            # 3. Active Investments (Shows capital currently locked in active plans)
+            # 3. Active Investments (Capital currently locked in active plans)
             active_investments_qs = ActiveInvestment.objects.filter(user=user, status='ACTIVE')
             active_investment_total = active_investments_qs.aggregate(total=Sum('amount'))['total'] or 0.00
             
-            # 4. Total Earned (Daily profits accumulated across active plans)
+            # 4. Total Earned (Daily profits accumulated across all plans for analytics display)
             total_earned = 0.00
             for inv in all_investments:
                 total_earned += float(inv.calculate_accumulated_profit() or 0.00)
@@ -487,10 +487,9 @@ class UserDashboardStatsView(APIView):
             approved_withdrawals = Withdrawal.objects.filter(user=user, status='APPROVED')
             withdrew_total = approved_withdrawals.aggregate(total=Sum('amount'))['total'] or 0.00
             
-            # 6. Safe Balance: User's database balance (which automatically includes returned principals) + daily earnings
-            base_balance = float(getattr(user, 'balance', 0.00))
-            calculated_balance = base_balance + float(total_earned)
-            balance = max(0.0, calculated_balance)
+            # 6. Balance: Strictly reflects the database user balance 
+            # (which automatically receives returned principals only when plans expire)
+            balance = float(getattr(user, 'balance', 0.00))
 
             return Response({
                 "username": user.username,
@@ -501,7 +500,7 @@ class UserDashboardStatsView(APIView):
                 "earned": float(total_earned),
                 "total_earned": float(total_earned),
                 "withdrew_total": float(withdrew_total),
-                "balance": float(balance),
+                "balance": max(0.0, balance),
                 "ref_bonus": float(getattr(user, 'referral_bonus_earned', 0.00))
             }, status=status.HTTP_200_OK)
 
