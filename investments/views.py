@@ -7,6 +7,7 @@ from django.db.models import Q
 from rest_framework.views import APIView
 from accounts.serializers import RegisterSerializer
 from rest_framework import serializers
+import uuid
 
 from django.db import transaction
 
@@ -534,7 +535,7 @@ class UserInvestPlanView(generics.GenericAPIView):
             is_from_balance = (payment_method == 'Account Balance')
 
             if is_from_balance:
-                # Reinvestment: User must have enough internal balance, activates instantly
+                # --- ACCOUNT BALANCE FLOW (Instant Activation) ---
                 if request.user.balance < amount:
                     return Response({'error': 'Insufficient account balance for this reinvestment.'}, status=status.HTTP_400_BAD_REQUEST)
                 
@@ -568,7 +569,21 @@ class UserInvestPlanView(generics.GenericAPIView):
                 }, status=status.HTTP_201_CREATED)
 
             else:
-                # Normal Flow for Crypto Gateways:
+                # --- CRYPTO GATEWAY FLOW (Awaits Admin Approval) ---
+                # Generate a unique transaction reference ID for the crypto deposit
+                unique_tx_id = f"TX-{uuid.uuid4().hex[:10].upper()}"
+
+                # Create a PENDING Deposit linked to the plan
+                Deposit.objects.create(
+                    user=request.user,
+                    plan=plan,
+                    gateway=payment_method or 'Crypto Deposit',
+                    amount=amount,
+                    transaction_id=unique_tx_id,
+                    status='PENDING'
+                )
+
+                # Log pending transaction
                 Transaction.objects.create(
                     user=request.user,
                     transaction_type='INVESTMENT',
