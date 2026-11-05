@@ -469,31 +469,27 @@ class UserDashboardStatsView(APIView):
             approved_deposits = Deposit.objects.filter(user=user, status='APPROVED')
             total_deposit = approved_deposits.aggregate(total=Sum('amount'))['total'] or 0.00
             
-            # 2. Active Investments (Shows capital currently locked in plans)
+            # 2. Trigger expiry check and principal release for all user investments
+            all_investments = ActiveInvestment.objects.filter(user=user)
+            for inv in all_investments:
+                inv.check_and_update_expiry()
+            
+            # 3. Active Investments (Shows capital currently locked in active plans)
             active_investments_qs = ActiveInvestment.objects.filter(user=user, status='ACTIVE')
             active_investment_total = active_investments_qs.aggregate(total=Sum('amount'))['total'] or 0.00
             
-            # 3. Expired Investments (Principal released back upon completion)
-            expired_investments_qs = ActiveInvestment.objects.filter(user=user, status='EXPIRED')
-            expired_principal = expired_investments_qs.aggregate(total=Sum('amount'))['total'] or 0.00
-            
-            # 4. Total Earned (Daily profits accumulated across all plans)
+            # 4. Total Earned (Daily profits accumulated across active plans)
             total_earned = 0.00
-            all_investments = ActiveInvestment.objects.filter(user=user)
             for inv in all_investments:
-                if hasattr(inv, 'check_and_update_expiry'):
-                    inv.check_and_update_expiry()
-                if hasattr(inv, 'calculate_accumulated_profit'):
-                    total_earned += float(inv.calculate_accumulated_profit() or 0.00)
+                total_earned += float(inv.calculate_accumulated_profit() or 0.00)
             
             # 5. Total Approved Withdrawals
             approved_withdrawals = Withdrawal.objects.filter(user=user, status='APPROVED')
             withdrew_total = approved_withdrawals.aggregate(total=Sum('amount'))['total'] or 0.00
             
-            # 6. Safe Balance: Combines user.balance database field + earnings + expired capital 
-            # (Ensures balance never drops blank when a plan is newly activated)
+            # 6. Safe Balance: User's database balance (which automatically includes returned principals) + daily earnings
             base_balance = float(getattr(user, 'balance', 0.00))
-            calculated_balance = base_balance + float(total_earned) + float(expired_principal)
+            calculated_balance = base_balance + float(total_earned)
             balance = max(0.0, calculated_balance)
 
             return Response({

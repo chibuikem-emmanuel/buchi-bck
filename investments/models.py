@@ -172,7 +172,7 @@ class ActiveInvestment(models.Model):
         ('EXPIRED', 'Expired'),
     )
     
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='active_investments')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='active_investments') # Use your User model reference here
     plan = models.ForeignKey('InvestmentPlan', on_delete=models.SET_NULL, null=True, blank=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     daily_profit_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=4.00)
@@ -181,16 +181,22 @@ class ActiveInvestment(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def check_and_update_expiry(self):
-        """Automatically expires the investment and returns principal if duration has passed."""
+        """Automatically expires the investment and returns principal to user balance once duration passes."""
         if self.status == 'ACTIVE':
             delta = timezone.now() - self.created_at
             if delta.days >= self.duration_days:
                 self.status = 'EXPIRED'
                 self.save()
+                
+                # Automatically return principal back to user balance upon expiration
+                if self.user and self.amount:
+                    self.user.balance += self.amount
+                    self.user.save()
+                    
         return self.status
 
     def calculate_accumulated_profit(self):
-        """Calculates total profit earned so far based on days elapsed."""
+        """Calculates total profit earned so far based on elapsed days (capped at plan duration)."""
         self.check_and_update_expiry()
         delta = timezone.now() - self.created_at
         days_elapsed = min(delta.days, self.duration_days)
