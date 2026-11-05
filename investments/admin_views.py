@@ -620,6 +620,7 @@ class AdminDepositsView(APIView):
         user_id = request.query_params.get('user_id')
         deposits = Deposit.objects.select_related('user').all()
         
+        # Filter by user_id if provided from the frontend dashboard
         if user_id:
             deposits = deposits.filter(user_id=user_id)
 
@@ -650,11 +651,14 @@ class AdminDepositsView(APIView):
 
                 if action == 'approve':
                     dep.status = 'APPROVED'
-                    # Calling dep.save() triggers the Deposit model's save() method logic:
-                    # - If plan exists -> creates ActiveInvestment & locks capital
-                    # - If no plan -> credits user balance
+                    user = dep.user
+                    if hasattr(user, 'profile'):
+                        user.profile.balance += dep.amount
+                        user.profile.save()
+                    elif hasattr(user, 'balance'):
+                        user.balance += dep.amount
+                        user.save()
                     dep.save()
-                    
                     return Response({"success": True, "message": f"Deposit #{dep.id} approved successfully!"})
 
                 elif action == 'reject':
@@ -663,7 +667,6 @@ class AdminDepositsView(APIView):
                     return Response({"success": True, "message": f"Deposit #{dep.id} has been rejected."})
 
                 return Response({"error": "Invalid action parameter."}, status=status.HTTP_400_BAD_REQUEST)
-                
         except Deposit.DoesNotExist:
             return Response({"error": "Deposit record not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:

@@ -76,28 +76,51 @@ class UserDepositCreateView(generics.GenericAPIView):
 
     def post(self, request, *args, **kwargs):
         try:
-            amount = float(request.data.get('amount', 0))
-            method = request.data.get('method', 'USDT TRC20')
+            amount = Decimal(str(request.data.get('amount', 0)))
+            method = request.data.get('method') or request.data.get('gateway', 'USDT TRC20')
+            plan_id = request.data.get('plan_id')  # Capture plan if investing via crypto for a plan
         except (ValueError, TypeError):
             return Response({"error": "Invalid deposit amount"}, status=status.HTTP_400_BAD_REQUEST)
 
         if amount <= 0:
             return Response({"error": "Amount must be greater than zero"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Log pending transaction for admin review
-        tx = Transaction.objects.create(
+        # Optional: Validate plan bounds if plan_id is provided
+        plan = None
+        if plan_id:
+            plan = InvestmentPlan.objects.filter(pk=plan_id).first()
+            if plan:
+                if amount < plan.min_deposit:
+                    return Response({'error': f'Amount is below the minimum deposit of ${plan.min_deposit} for this plan.'}, status=status.HTTP_400_BAD_REQUEST)
+                if plan.max_deposit and amount > plan.max_deposit:
+                    return Response({'error': f'Amount exceeds the maximum deposit of ${plan.max_deposit} for this plan.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        unique_tx_id = f"TX-{uuid.uuid4().hex[:10].upper()}"
+
+        # 1. Create the official Deposit record (This is what the admin dashboard approves!)
+        deposit = Deposit.objects.create(
             user=request.user,
-            transaction_type='DEPOSIT',
+            plan=plan,  # Safely links the investment plan!
+            gateway=method,
             amount=amount,
-            payment_method=method,
+            transaction_id=unique_tx_id,
+            status='PENDING'
+        )
+
+        # 2. Log pending transaction
+        Transaction.objects.create(
+            user=request.user,
+            transaction_type='INVESTMENT' if plan else 'DEPOSIT',
+            amount=amount,
             status='PENDING'
         )
 
         return Response({
             "success": True, 
             "message": f"Deposit request of ${amount:.2f} submitted! Awaiting admin confirmation.",
-            "transaction_id": tx.id
-        })
+            "deposit_id": deposit.id,
+            "transaction_id": unique_tx_id
+        }, status=status.HTTP_201_CREATED)
 
 # crystals_core/investments/views.py
 
