@@ -622,11 +622,9 @@ class AdminDepositsView(APIView):
         
         deposits = Deposit.objects.select_related('user', 'plan').all()
         
-        # Filter by user_id if provided
         if user_id:
             deposits = deposits.filter(user_id=user_id)
             
-        # Filter by status if provided (e.g., PENDING, APPROVED)
         if status_param:
             deposits = deposits.filter(status__iexact=status_param.strip())
 
@@ -652,14 +650,15 @@ class AdminDepositsView(APIView):
 
         try:
             with transaction.atomic():
-                dep = Deposit.objects.select_for_update().select_related('plan', 'user').get(pk=deposit_id)
+                # Lock only the Deposit row to avoid PostgreSQL outer join locking bugs
+                dep = Deposit.objects.select_for_update().get(pk=deposit_id)
+                
                 if dep.status != 'PENDING':
                     return Response({"error": f"Deposit is already {dep.status.lower()}."}, status=status.HTTP_400_BAD_REQUEST)
 
                 if action == 'approve':
-                    # Setting status and calling dep.save() delegates the handling safely:
-                    # - If dep.plan exists -> creates ActiveInvestment & locks capital (Balance untouched!)
-                    # - If dep.plan is None -> credits user balance normally
+                    # Changing status and saving lets the Deposit model handle 
+                    # whether to lock into an ActiveInvestment or credit the balance.
                     dep.status = 'APPROVED'
                     dep.save()
                     
