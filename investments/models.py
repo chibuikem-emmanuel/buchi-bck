@@ -89,11 +89,13 @@ class WithdrawalRequest(models.Model):
 
 class Deposit(models.Model):
     STATUS_CHOICES = (
-    ('PENDING', 'Pending'),
-    ('APPROVED', 'Approved'),
-    ('REJECTED', 'Rejected'),
-)
+        ('PENDING', 'Pending'),
+        ('APPROVED', 'Approved'),
+        ('REJECTED', 'Rejected'),
+    )
+    
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='deposits')
+    plan = models.ForeignKey('InvestmentPlan', on_delete=models.SET_NULL, null=True, blank=True, related_name='deposits')
     gateway = models.CharField(max_length=100) # e.g. "USDT TRC20"
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     transaction_id = models.CharField(max_length=100, unique=True)
@@ -104,9 +106,50 @@ class Deposit(models.Model):
     class Meta:
         ordering = ['-created_at']
 
+    def save(self, *args, **kwargs):
+        # Check if an existing deposit is being updated to 'APPROVED' by admin
+        if self.pk:
+            old_instance = Deposit.objects.filter(pk=self.pk).first()
+            if old_instance and old_instance.status != 'APPROVED' and self.status == 'APPROVED':
+                
+                # Admin just approved the deposit!
+                if self.plan:
+                    # 1. If a plan was selected, lock the capital into an ActiveInvestment
+                    ActiveInvestment.objects.create(
+                        user=self.user,
+                        plan=self.plan,
+                        amount=self.amount,
+                        daily_profit_percentage=getattr(self.plan, 'daily_profit_percentage', 4.00),
+                        duration_days=getattr(self.plan, 'duration_days', 3),
+                        status='ACTIVE'
+                    )
+                    
+                    # Log the transaction
+                    Transaction.objects.create(
+                        user=self.user,
+                        transaction_type='INVESTMENT',
+                        amount=self.amount,
+                        status='APPROVED'
+                    )
+                else:
+                    # 2. If it's a general wallet funding deposit with no plan, credit the user balance
+                    self.user.balance += self.amount
+                    self.user.save()
+
+                    Transaction.objects.create(
+                        user=self.user,
+                        transaction_type='DEPOSIT',
+                        amount=self.amount,
+                        status='APPROVED'
+                    )
+
+        super().save(*args, **kwargs)
+
+
+
 
 class SystemSetting(models.Model):
-    platform_name = models.CharField(max_length=100, default='Crystals Investments')
+    platform_name = models.CharField(max_length=100, default='GROVE ASSETS LTD')
 
     def save(self, *args, **kwargs):
         # Force the ID to always be 1 (Singleton pattern)
@@ -115,7 +158,7 @@ class SystemSetting(models.Model):
 
     @classmethod
     def load(cls):
-        obj, _ = cls.objects.get_or_create(pk=1, defaults={'platform_name': 'Crystals Investments'})
+        obj, _ = cls.objects.get_or_create(pk=1, defaults={'platform_name': 'GROVE ASSETS LTD'})
         return obj
 
     def __str__(self):
