@@ -618,16 +618,23 @@ class AdminDepositsView(APIView):
 
     def get(self, request, *args, **kwargs):
         user_id = request.query_params.get('user_id')
-        deposits = Deposit.objects.select_related('user').all()
+        status_param = request.query_params.get('status')
         
-        # Filter by user_id if provided from the frontend dashboard
+        deposits = Deposit.objects.select_related('user', 'plan').all()
+        
+        # Filter by user_id if provided
         if user_id:
             deposits = deposits.filter(user_id=user_id)
+            
+        # Filter by status if provided (e.g., PENDING, APPROVED)
+        if status_param:
+            deposits = deposits.filter(status__iexact=status_param.strip())
 
         data = [{
             "id": d.id,
             "username": d.user.username if d.user else "Unknown",
             "user_email": d.user.email if d.user else "",
+            "plan_name": d.plan.name if d.plan else None,
             "gateway": d.gateway,
             "amount": str(d.amount),
             "transaction_id": d.transaction_id,
@@ -645,20 +652,17 @@ class AdminDepositsView(APIView):
 
         try:
             with transaction.atomic():
-                dep = Deposit.objects.select_for_update().get(pk=deposit_id)
+                dep = Deposit.objects.select_for_update().select_related('plan', 'user').get(pk=deposit_id)
                 if dep.status != 'PENDING':
                     return Response({"error": f"Deposit is already {dep.status.lower()}."}, status=status.HTTP_400_BAD_REQUEST)
 
                 if action == 'approve':
+                    # Setting status and calling dep.save() delegates the handling safely:
+                    # - If dep.plan exists -> creates ActiveInvestment & locks capital (Balance untouched!)
+                    # - If dep.plan is None -> credits user balance normally
                     dep.status = 'APPROVED'
-                    user = dep.user
-                    if hasattr(user, 'profile'):
-                        user.profile.balance += dep.amount
-                        user.profile.save()
-                    elif hasattr(user, 'balance'):
-                        user.balance += dep.amount
-                        user.save()
                     dep.save()
+                    
                     return Response({"success": True, "message": f"Deposit #{dep.id} approved successfully!"})
 
                 elif action == 'reject':
@@ -667,6 +671,7 @@ class AdminDepositsView(APIView):
                     return Response({"success": True, "message": f"Deposit #{dep.id} has been rejected."})
 
                 return Response({"error": "Invalid action parameter."}, status=status.HTTP_400_BAD_REQUEST)
+                
         except Deposit.DoesNotExist:
             return Response({"error": "Deposit record not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
