@@ -631,34 +631,48 @@ class UserDepositCreateView(generics.GenericAPIView):
     def post(self, request, *args, **kwargs):
         try:
             amount = Decimal(str(request.data.get('amount', 0)))
-            if amount <= 0:
-                return Response({'error': 'Invalid amount'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            # 1. Credit user balance
-            request.user.balance += amount
-            request.user.save()
+            method = request.data.get('method') or request.data.get('gateway', 'USDT TRC20')
+            plan_id = request.data.get('plan_id') # Attached if investing in a plan via crypto
+        except (ValueError, TypeError):
+            return Response({"error": "Invalid deposit amount"}, status=status.HTTP_400_BAD_REQUEST)
 
-            # 2. Create Transaction record
-            Transaction.objects.create(
-                user=request.user,
-                transaction_type='DEPOSIT',
-                amount=amount,
-                status='APPROVED'
-            )
+        if amount <= 0:
+            return Response({"error": "Amount must be greater than zero"}, status=status.HTTP_400_BAD_REQUEST)
 
-            # 3. Create Deposit record so analytics track total deposited
-            Deposit.objects.create(
-                user=request.user,
-                amount=amount,
-                status='APPROVED',
-                gateway=request.data.get('gateway', 'Manual')
-            )
+        # Optional: Validate plan bounds if plan_id is provided
+        plan = None
+        if plan_id:
+            plan = InvestmentPlan.objects.filter(pk=plan_id).first()
+            if plan:
+                if amount < plan.min_deposit:
+                    return Response({'error': f'Amount is below the minimum deposit of ${plan.min_deposit} for this plan.'}, status=status.HTTP_400_BAD_REQUEST)
+                if plan.max_deposit and amount > plan.max_deposit:
+                    return Response({'error': f'Amount exceeds the maximum deposit of ${plan.max_deposit} for this plan.'}, status=status.HTTP_400_BAD_REQUEST)
 
-            return Response({
-                'success': True, 
-                'message': 'Deposit successful! Balance updated.', 
-                'new_balance': str(request.user.balance)
-            }, status=status.HTTP_201_CREATED)
+        unique_tx_id = f"TX-{uuid.uuid4().hex[:10].upper()}"
 
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        # 1. Create a PENDING Deposit record (Awaiting admin approval)
+        # Notice: NO balance modification here! 
+        deposit = Deposit.objects.create(
+            user=request.user,
+            plan=plan,  # Links the investment plan safely!
+            gateway=method,
+            amount=amount,
+            transaction_id=unique_tx_id,
+            status='PENDING'
+        )
+
+        # 2. Log pending transaction
+        Transaction.objects.create(
+            user=request.user,
+            transaction_type='INVESTMENT' if plan else 'DEPOSIT',
+            amount=amount,
+            status='PENDING'
+        )
+
+        return Response({
+            "success": True, 
+            "message": f"Deposit request of ${amount:.2f} submitted! Awaiting admin confirmation.",
+            "deposit_id": deposit.id,
+            "transaction_id": unique_tx_id
+        }, status=status.HTTP_201_CREATED)
