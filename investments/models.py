@@ -109,7 +109,7 @@ class Deposit(models.Model):
             old_instance = Deposit.objects.filter(pk=self.pk).first()
             if old_instance and old_instance.status != 'APPROVED' and self.status == 'APPROVED':
                 
-                # RULE 1: Plan deposit approved -> Lock into ActiveInvestment. BALANCE IS NOT TOUCHED.
+                # RULE 1: Plan-based deposit approved -> Lock principal into ActiveInvestment. BALANCE IS NOT TOUCHED.
                 if self.plan is not None:
                     ActiveInvestment.objects.create(
                         user=self.user,
@@ -127,7 +127,7 @@ class Deposit(models.Model):
                         transaction_id=f"INV-{self.transaction_id or self.id}"
                     )
                 else:
-                    # RULE 2: General wallet deposit (no plan) -> Funds spendable balance directly.
+                    # RULE 2: General wallet funding (no plan) -> Credits balance directly.
                     self.user.balance += self.amount
                     self.user.save()
 
@@ -227,8 +227,8 @@ class ActiveInvestment(models.Model):
 
     def calculate_accumulated_profit(self):
         """
-        Calculates earnings progressively over time (24-hr increments).
-        Starts at $0.00 right when approved and scales up daily until duration ends.
+        Calculates progressive 24-hr daily earnings for analytics display (total_earned).
+        Does NOT touch or add to the spendable balance daily.
         """
         if not self.start_date:
             return Decimal('0.00')
@@ -242,7 +242,9 @@ class ActiveInvestment(models.Model):
         return (daily_profit * days_elapsed).quantize(Decimal('0.01'))
 
     def check_and_update_expiry(self):
-        """Releases principal back to user balance strictly once when duration days expire."""
+        """
+        Releases principal back to user balance strictly once when duration days expire.
+        """
         if self.status == 'ACTIVE' and not self.is_completed:
             if self.end_date and timezone.now() >= self.end_date:
                 self.status = 'COMPLETED'

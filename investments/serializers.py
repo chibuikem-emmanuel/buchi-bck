@@ -62,7 +62,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     referral_bonus_earned = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True, default=0.00)
 
     class Meta:
-        model = None  # Use your actual User model reference here
+        model = User
         fields = [
             'id', 'username', 'email', 'balance', 
             'deposited', 'total_deposit', 'active_investment', 
@@ -103,7 +103,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
         return obj.referrals.count() if hasattr(obj, 'referrals') else 0
 
     def get_balance(self, obj):
-        # Uses true database spendable balance without duplicating locked investments
         return float(getattr(obj, 'balance', 0.00))
 
 
