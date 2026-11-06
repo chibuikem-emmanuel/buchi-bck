@@ -5,7 +5,7 @@ from django.conf import settings
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
-
+from datetime import timedelta
 
 
 
@@ -114,12 +114,11 @@ class Deposit(models.Model):
                 
                 if self.plan:
                     # 1. Plan-based deposit approved: Lock into ActiveInvestment
-                    # (Principal goes to Deposited analytics, balance untouched)
                     ActiveInvestment.objects.create(
                         user=self.user,
                         plan=self.plan,
                         amount=self.amount,
-                        daily_profit_percentage=getattr(self.plan, 'daily_profit', 4.00),
+                        daily_profit_percentage=getattr(self.plan, 'daily_profit', Decimal('4.00')),
                         duration_days=getattr(self.plan, 'duration_days', 3),
                         status='ACTIVE'
                     )
@@ -215,7 +214,7 @@ class ActiveInvestment(models.Model):
         ('CANCELLED', 'Cancelled'),
     )
 
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='investments')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='active_investments')
     plan = models.ForeignKey(InvestmentPlan, on_delete=models.SET_NULL, null=True, blank=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     daily_profit_percentage = models.DecimalField(max_digits=5, decimal_places=2, default='4.00')
@@ -229,7 +228,6 @@ class ActiveInvestment(models.Model):
         return f"{self.user.username} - ${self.amount} ({self.status})"
 
     def calculate_accumulated_profit(self):
-        from django.utils import timezone
         if not self.start_date:
             return Decimal('0.00')
         
@@ -237,7 +235,6 @@ class ActiveInvestment(models.Model):
         elapsed_seconds = (now - self.start_date).total_seconds()
         elapsed_days = Decimal(str(elapsed_seconds)) / Decimal('86400')
         
-        # Cap elapsed days at duration_days for completed/active plans
         effective_days = min(elapsed_days, Decimal(str(self.duration_days)))
         if effective_days < 0:
             effective_days = Decimal('0.00')
@@ -247,7 +244,6 @@ class ActiveInvestment(models.Model):
         return total_profit.quantize(Decimal('0.01'))
 
     def check_and_update_expiry(self):
-        from django.utils import timezone
         if self.status == 'ACTIVE' and not self.is_completed:
             if self.end_date and timezone.now() >= self.end_date:
                 self.status = 'COMPLETED'
@@ -269,6 +265,5 @@ class ActiveInvestment(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.end_date and self.start_date:
-            from datetime import timedelta
             self.end_date = self.start_date + timedelta(days=self.duration_days)
         super().save(*args, **kwargs)
