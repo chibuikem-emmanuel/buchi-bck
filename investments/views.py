@@ -629,10 +629,15 @@ class UserDepositCreateView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
+        # 🔍 DEBUG PRINTS: Check your backend terminal when submitting a deposit
+        print("--- DEBUG DEPOSIT REQUEST DATA ---")
+        print("Request Data Received:", request.data)
+        print("Plan ID from request:", request.data.get('plan_id'))
+
         try:
             amount = Decimal(str(request.data.get('amount', 0)))
             gateway = request.data.get('gateway') or request.data.get('method', 'USDT TRC20')
-            plan_id = request.data.get('plan_id')  # Captures plan id if investing via crypto for a plan
+            plan_id = request.data.get('plan_id')
         except (ValueError, TypeError):
             return Response({"error": "Invalid deposit amount."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -642,6 +647,7 @@ class UserDepositCreateView(generics.GenericAPIView):
         plan = None
         if plan_id:
             plan = InvestmentPlan.objects.filter(pk=plan_id).first()
+            print("Resolved Plan Object from DB:", plan)
             if plan:
                 if amount < plan.min_deposit:
                     return Response({"error": f"Amount is below the minimum deposit of ${plan.min_deposit} for this plan."}, status=status.HTTP_400_BAD_REQUEST)
@@ -653,7 +659,7 @@ class UserDepositCreateView(generics.GenericAPIView):
         # 1. Create PENDING Deposit record with the plan safely linked
         deposit = Deposit.objects.create(
             user=request.user,
-            plan=plan,  # Explicitly attached so it is never None when plan is chosen
+            plan=plan,  # 👈 This ensures the plan is linked so it bypasses balance on approval
             gateway=gateway,
             amount=amount,
             transaction_id=unique_tx_id,
