@@ -652,7 +652,7 @@ class AdminDepositsView(APIView):
             with transaction.atomic():
                 dep = Deposit.objects.select_for_update().get(pk=deposit_id)
                 
-                # Idempotency check: Don't crash if already approved
+                # Idempotency check
                 if dep.status == 'APPROVED':
                     return Response({"success": True, "message": f"Deposit #{dep.id} was already approved."})
                 if dep.status == 'REJECTED':
@@ -672,32 +672,39 @@ class AdminDepositsView(APIView):
                             status='ACTIVE'
                         )
                         
-                        # 2. Safely update or create transaction using a unique identifier to avoid duplicate key violations
-                        tx_id = f"INV-{dep.transaction_id}" if dep.transaction_id else f"INV-DEP-{dep.id}"
-                        Transaction.objects.update_or_create(
-                            transaction_id=tx_id,
-                            defaults={
-                                'user': dep.user,
-                                'transaction_type': 'INVESTMENT',
-                                'amount': dep.amount,
-                                'status': 'APPROVED'
-                            }
-                        )
+                        # 2. Update the existing transaction or create one if missing, using the exact same transaction_id safely
+                        if dep.transaction_id:
+                            Transaction.objects.filter(transaction_id=dep.transaction_id).update(
+                                transaction_type='INVESTMENT',
+                                status='APPROVED',
+                                amount=dep.amount
+                            )
+                        else:
+                            # Fallback if transaction_id was blank
+                            Transaction.objects.create(
+                                user=dep.user,
+                                transaction_type='INVESTMENT',
+                                amount=dep.amount,
+                                status='APPROVED'
+                            )
                     else:
                         # General deposit: fund balance directly
                         dep.user.balance += dep.amount
                         dep.user.save()
 
-                        tx_id = f"DEP-{dep.transaction_id}" if dep.transaction_id else f"DEP-{dep.id}"
-                        Transaction.objects.update_or_create(
-                            transaction_id=tx_id,
-                            defaults={
-                                'user': dep.user,
-                                'transaction_type': 'DEPOSIT',
-                                'amount': dep.amount,
-                                'status': 'APPROVED'
-                            }
-                        )
+                        if dep.transaction_id:
+                            Transaction.objects.filter(transaction_id=dep.transaction_id).update(
+                                transaction_type='DEPOSIT',
+                                status='APPROVED',
+                                amount=dep.amount
+                            )
+                        else:
+                            Transaction.objects.create(
+                                user=dep.user,
+                                transaction_type='DEPOSIT',
+                                amount=dep.amount,
+                                status='APPROVED'
+                            )
 
                     dep.save()
                     return Response({"success": True, "message": f"Deposit #{dep.id} approved successfully!"})
@@ -706,7 +713,6 @@ class AdminDepositsView(APIView):
                     dep.status = 'REJECTED'
                     dep.save()
                     
-                    # Also update corresponding transaction status if it exists
                     if dep.transaction_id:
                         Transaction.objects.filter(transaction_id=dep.transaction_id).update(status='REJECTED')
 
