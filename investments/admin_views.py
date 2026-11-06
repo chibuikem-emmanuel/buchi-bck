@@ -652,8 +652,7 @@ class AdminDepositsView(APIView):
             with transaction.atomic():
                 dep = Deposit.objects.select_for_update().get(pk=deposit_id)
                 
-                # IDEMPOTENCY CHECK: If already approved/rejected, don't crash. 
-                # Just return success so the frontend table can clear/update smoothly.
+                # Idempotency check: Don't crash if already approved
                 if dep.status == 'APPROVED':
                     return Response({"success": True, "message": f"Deposit #{dep.id} was already approved."})
                 if dep.status == 'REJECTED':
@@ -663,6 +662,7 @@ class AdminDepositsView(APIView):
                     dep.status = 'APPROVED'
                     
                     if dep.plan is not None:
+                        # 1. Create ActiveInvestment for plan deposits (Balance is NOT touched)
                         ActiveInvestment.objects.create(
                             user=dep.user,
                             plan=dep.plan,
@@ -671,23 +671,32 @@ class AdminDepositsView(APIView):
                             duration_days=dep.plan.duration_days,
                             status='ACTIVE'
                         )
-                        Transaction.objects.create(
-                            user=dep.user,
-                            transaction_type='INVESTMENT',
-                            amount=dep.amount,
-                            status='APPROVED',
-                            transaction_id=f"INV-{dep.transaction_id or dep.id}"
+                        
+                        # 2. Safely update or create transaction using a unique identifier to avoid duplicate key violations
+                        tx_id = f"INV-{dep.transaction_id}" if dep.transaction_id else f"INV-DEP-{dep.id}"
+                        Transaction.objects.update_or_create(
+                            transaction_id=tx_id,
+                            defaults={
+                                'user': dep.user,
+                                'transaction_type': 'INVESTMENT',
+                                'amount': dep.amount,
+                                'status': 'APPROVED'
+                            }
                         )
                     else:
+                        # General deposit: fund balance directly
                         dep.user.balance += dep.amount
                         dep.user.save()
 
-                        Transaction.objects.create(
-                            user=dep.user,
-                            transaction_type='DEPOSIT',
-                            amount=dep.amount,
-                            status='APPROVED',
-                            transaction_id=f"DEP-{dep.transaction_id or dep.id}"
+                        tx_id = f"DEP-{dep.transaction_id}" if dep.transaction_id else f"DEP-{dep.id}"
+                        Transaction.objects.update_or_create(
+                            transaction_id=tx_id,
+                            defaults={
+                                'user': dep.user,
+                                'transaction_type': 'DEPOSIT',
+                                'amount': dep.amount,
+                                'status': 'APPROVED'
+                            }
                         )
 
                     dep.save()
@@ -696,6 +705,11 @@ class AdminDepositsView(APIView):
                 elif action == 'reject':
                     dep.status = 'REJECTED'
                     dep.save()
+                    
+                    # Also update corresponding transaction status if it exists
+                    if dep.transaction_id:
+                        Transaction.objects.filter(transaction_id=dep.transaction_id).update(status='REJECTED')
+
                     return Response({"success": True, "message": f"Deposit #{dep.id} has been rejected."})
 
                 return Response({"error": "Invalid action parameter."}, status=status.HTTP_400_BAD_REQUEST)
