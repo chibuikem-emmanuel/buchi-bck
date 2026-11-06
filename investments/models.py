@@ -105,13 +105,12 @@ class Deposit(models.Model):
         ordering = ['-created_at']
 
     def save(self, *args, **kwargs):
-        # Check if this is an update transitioning from PENDING to APPROVED
         if self.pk:
             old_instance = Deposit.objects.filter(pk=self.pk).first()
             if old_instance and old_instance.status != 'APPROVED' and self.status == 'APPROVED':
                 
+                # RULE 1: Plan deposit approved -> Lock into ActiveInvestment. BALANCE IS NOT TOUCHED.
                 if self.plan is not None:
-                    # 1. Plan-based deposit: Lock capital into ActiveInvestment. Balance is NOT touched.
                     ActiveInvestment.objects.create(
                         user=self.user,
                         plan=self.plan,
@@ -128,7 +127,7 @@ class Deposit(models.Model):
                         transaction_id=f"INV-{self.transaction_id or self.id}"
                     )
                 else:
-                    # 2. General wallet deposit (no plan): Funds spendable balance directly.
+                    # RULE 2: General wallet deposit (no plan) -> Funds spendable balance directly.
                     self.user.balance += self.amount
                     self.user.save()
 
@@ -227,7 +226,10 @@ class ActiveInvestment(models.Model):
         return f"{self.user.username} - ${self.amount} ({self.status})"
 
     def calculate_accumulated_profit(self):
-        """Calculates real-time daily earnings based on 24-hour cycles elapsed, capped at plan duration."""
+        """
+        Calculates earnings progressively over time (24-hr increments).
+        Starts at $0.00 right when approved and scales up daily until duration ends.
+        """
         if not self.start_date:
             return Decimal('0.00')
         
@@ -240,14 +242,13 @@ class ActiveInvestment(models.Model):
         return (daily_profit * days_elapsed).quantize(Decimal('0.01'))
 
     def check_and_update_expiry(self):
-        """Expires the investment once duration passes and releases principal back to spendable balance."""
+        """Releases principal back to user balance strictly once when duration days expire."""
         if self.status == 'ACTIVE' and not self.is_completed:
             if self.end_date and timezone.now() >= self.end_date:
                 self.status = 'COMPLETED'
                 self.is_completed = True
                 self.save()
 
-                # Release principal back to user balance exactly once upon expiry
                 if self.user and self.amount:
                     self.user.balance += self.amount
                     self.user.save()
