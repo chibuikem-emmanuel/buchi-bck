@@ -653,7 +653,7 @@ class UserDepositCreateView(generics.GenericAPIView):
         # 1. Create PENDING Deposit record with the plan safely linked
         deposit = Deposit.objects.create(
             user=request.user,
-            plan=plan,  # Ensures plan is explicitly attached so it is never None
+            plan=plan,  # Explicitly attached so it is never None when plan is chosen
             gateway=gateway,
             amount=amount,
             transaction_id=unique_tx_id,

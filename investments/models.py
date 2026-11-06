@@ -47,6 +47,7 @@ class Transaction(models.Model):
         ('INVESTMENT', 'Investment'),
         ('REINVESTMENT', 'Reinvestment'),
         ('EARNING', 'Daily Earning'),
+        ('PRINCIPAL_RELEASE', 'Principal Release'),
     )
     STATUS_CHOICES = (
         ('PENDING', 'Pending'),
@@ -109,7 +110,7 @@ class Deposit(models.Model):
             old_instance = Deposit.objects.filter(pk=self.pk).first()
             if old_instance and old_instance.status != 'APPROVED' and self.status == 'APPROVED':
                 
-                # Strict routing: If a plan is attached, lock into ActiveInvestment. Balance is NOT touched.
+                # Strict Routing: Plan-based deposits lock into ActiveInvestment. Balance is NEVER touched.
                 if self.plan:
                     ActiveInvestment.objects.create(
                         user=self.user,
@@ -232,7 +233,6 @@ class ActiveInvestment(models.Model):
                 self.is_completed = True
                 self.save()
 
-                # Release principal back to spendable user balance strictly once upon expiration
                 if self.user and self.amount:
                     self.user.balance += self.amount
                     self.user.save()
