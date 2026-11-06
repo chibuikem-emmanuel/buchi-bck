@@ -760,6 +760,42 @@ class RegisterView(APIView):
     
 
 
+
+
+
+
+class AdminProcessDepositView(generics.GenericAPIView):
+    permission_classes = [permissions.IsAuthenticated] # Add IsAdminUser if required
+
+    def post(self, request, *args, **kwargs):
+        deposit_id = request.data.get('deposit_id') or request.data.get('id')
+        action = request.data.get('action') # 'approve' or 'reject'
+
+        try:
+            with transaction.atomic():
+                dep = Deposit.objects.select_for_update().get(pk=deposit_id)
+                if dep.status != 'PENDING':
+                    return Response({"error": f"Deposit is already {dep.status.lower()}."}, status=status.HTTP_400_BAD_REQUEST)
+
+                if action == 'approve':
+                    dep.status = 'APPROVED'
+                    dep.save()  # Triggers Deposit.save() routing automatically!
+                    return Response({"success": True, "message": f"Deposit #{dep.id} approved successfully."})
+                
+                elif action == 'reject':
+                    dep.status = 'REJECTED'
+                    dep.save()
+                    return Response({"success": True, "message": f"Deposit #{dep.id} has been rejected."})
+                
+                return Response({"error": "Invalid action parameter."}, status=status.HTTP_400_BAD_REQUEST)
+
+        except Deposit.DoesNotExist:
+            return Response({"error": "Deposit record not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+
+
 class AdminWithdrawalDetailView(generics.RetrieveAPIView):
     queryset = WithdrawalRequest.objects.all()
     serializer_class = WithdrawalRequestSerializer

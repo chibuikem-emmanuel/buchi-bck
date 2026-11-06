@@ -629,7 +629,6 @@ class UserDepositCreateView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        # 🔍 DEBUG PRINTS: Check your backend terminal when submitting a deposit
         print("--- DEBUG DEPOSIT REQUEST DATA ---")
         print("Request Data Received:", request.data)
         print("Plan ID from request:", request.data.get('plan_id'))
@@ -656,10 +655,10 @@ class UserDepositCreateView(generics.GenericAPIView):
 
         unique_tx_id = f"TX-{uuid.uuid4().hex[:10].upper()}"
 
-        # 1. Create PENDING Deposit record with the plan safely linked
+        # 1. Create PENDING Deposit record with the plan linked
         deposit = Deposit.objects.create(
             user=request.user,
-            plan=plan,  # 👈 This ensures the plan is linked so it bypasses balance on approval
+            plan=plan,
             gateway=gateway,
             amount=amount,
             transaction_id=unique_tx_id,
@@ -681,3 +680,8 @@ class UserDepositCreateView(generics.GenericAPIView):
             "deposit_id": deposit.id,
             "transaction_id": unique_tx_id
         }, status=status.HTTP_201_CREATED)
+
+
+
+
+
