@@ -650,18 +650,46 @@ class AdminDepositsView(APIView):
 
         try:
             with transaction.atomic():
-                # Lock only the Deposit row to avoid PostgreSQL outer join locking bugs
+                # Lock only the Deposit row to avoid PostgreSQL locking issues
                 dep = Deposit.objects.select_for_update().get(pk=deposit_id)
                 
                 if dep.status != 'PENDING':
                     return Response({"error": f"Deposit is already {dep.status.lower()}."}, status=status.HTTP_400_BAD_REQUEST)
 
                 if action == 'approve':
-                    # Changing status and saving lets the Deposit model handle 
-                    # whether to lock into an ActiveInvestment or credit the balance.
                     dep.status = 'APPROVED'
-                    dep.save()
                     
+                    # Explicit routing: If a plan is selected, lock capital into ActiveInvestment. Balance is NOT touched.
+                    if dep.plan is not None:
+                        ActiveInvestment.objects.create(
+                            user=dep.user,
+                            plan=dep.plan,
+                            amount=dep.amount,
+                            daily_profit_percentage=dep.plan.daily_profit,
+                            duration_days=dep.plan.duration_days,
+                            status='ACTIVE'
+                        )
+                        Transaction.objects.create(
+                            user=dep.user,
+                            transaction_type='INVESTMENT',
+                            amount=dep.amount,
+                            status='APPROVED',
+                            transaction_id=f"INV-{dep.transaction_id or dep.id}"
+                        )
+                    else:
+                        # General wallet deposit only -> Credits balance directly
+                        dep.user.balance += dep.amount
+                        dep.user.save()
+
+                        Transaction.objects.create(
+                            user=dep.user,
+                            transaction_type='DEPOSIT',
+                            amount=dep.amount,
+                            status='APPROVED',
+                            transaction_id=f"DEP-{dep.transaction_id or dep.id}"
+                        )
+
+                    dep.save()
                     return Response({"success": True, "message": f"Deposit #{dep.id} approved successfully!"})
 
                 elif action == 'reject':
