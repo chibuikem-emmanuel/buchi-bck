@@ -109,9 +109,8 @@ class Deposit(models.Model):
             old_instance = Deposit.objects.filter(pk=self.pk).first()
             if old_instance and old_instance.status != 'APPROVED' and self.status == 'APPROVED':
                 
-                # Check if an investment plan is attached to this deposit
+                # Strict routing: If a plan is attached, lock into ActiveInvestment. Balance is NOT touched.
                 if self.plan:
-                    # 1. Lock capital into ActiveInvestment (Principal goes to Deposited, balance untouched)
                     ActiveInvestment.objects.create(
                         user=self.user,
                         plan=self.plan,
@@ -128,7 +127,7 @@ class Deposit(models.Model):
                         status='APPROVED'
                     )
                 else:
-                    # 2. General funding with NO plan -> Fund spendable balance directly
+                    # Only general wallet funding with NO plan funds the balance directly
                     self.user.balance += self.amount
                     self.user.save()
 
@@ -240,7 +239,7 @@ class ActiveInvestment(models.Model):
 
                 Transaction.objects.create(
                     user=self.user,
-                    transaction_type='INVESTMENT',
+                    transaction_type='PRINCIPAL_RELEASE',
                     amount=self.amount,
                     status='APPROVED'
                 )
