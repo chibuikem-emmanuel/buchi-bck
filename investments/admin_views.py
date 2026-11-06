@@ -9,7 +9,7 @@ from rest_framework import status
 from .serializers import InvestmentPlanSerializer, WithdrawalRequestSerializer
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from .models import ProcessingGateway
-from .models import Deposit, Withdrawal
+from .models import Deposit, Withdrawal, ActiveInvestment
 from django.db import transaction
 from django.db.models import Q
 from django.db.models import Sum, Count
@@ -650,16 +650,18 @@ class AdminDepositsView(APIView):
 
         try:
             with transaction.atomic():
-                # Lock only the Deposit row to avoid PostgreSQL locking issues
                 dep = Deposit.objects.select_for_update().get(pk=deposit_id)
                 
-                if dep.status != 'PENDING':
-                    return Response({"error": f"Deposit is already {dep.status.lower()}."}, status=status.HTTP_400_BAD_REQUEST)
+                # IDEMPOTENCY CHECK: If already approved/rejected, don't crash. 
+                # Just return success so the frontend table can clear/update smoothly.
+                if dep.status == 'APPROVED':
+                    return Response({"success": True, "message": f"Deposit #{dep.id} was already approved."})
+                if dep.status == 'REJECTED':
+                    return Response({"error": f"Deposit #{dep.id} was already rejected."}, status=status.HTTP_400_BAD_REQUEST)
 
                 if action == 'approve':
                     dep.status = 'APPROVED'
                     
-                    # Explicit routing: If a plan is selected, lock capital into ActiveInvestment. Balance is NOT touched.
                     if dep.plan is not None:
                         ActiveInvestment.objects.create(
                             user=dep.user,
@@ -677,7 +679,6 @@ class AdminDepositsView(APIView):
                             transaction_id=f"INV-{dep.transaction_id or dep.id}"
                         )
                     else:
-                        # General wallet deposit only -> Credits balance directly
                         dep.user.balance += dep.amount
                         dep.user.save()
 
