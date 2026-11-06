@@ -650,14 +650,15 @@ class AdminDepositsView(APIView):
 
         try:
             with transaction.atomic():
-                # Lock only the deposit row to prevent Postgres outer join locking errors
+                # Lock only the Deposit row to avoid PostgreSQL outer join locking bugs
                 dep = Deposit.objects.select_for_update().get(pk=deposit_id)
                 
                 if dep.status != 'PENDING':
                     return Response({"error": f"Deposit is already {dep.status.lower()}."}, status=status.HTTP_400_BAD_REQUEST)
 
                 if action == 'approve':
-                    # Setting status and saving triggers Deposit.save() model logic cleanly
+                    # Changing status and saving lets the Deposit model handle 
+                    # whether to lock into an ActiveInvestment or credit the balance.
                     dep.status = 'APPROVED'
                     dep.save()
                     

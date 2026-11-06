@@ -5,7 +5,7 @@ from django.conf import settings
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
-from datetime import timedelta
+
 
 
 
@@ -19,10 +19,10 @@ User = get_user_model()
 
 class InvestmentPlan(models.Model):
     name = models.CharField(max_length=100)
-    min_deposit = models.DecimalField(max_digits=12, decimal_places=2, default='100.00')
-    max_deposit = models.DecimalField(max_digits=12, decimal_places=2, default='10000.00')
+    min_deposit = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('100.00'))
+    max_deposit = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('4999.00'))
     daily_profit = models.DecimalField(max_digits=5, decimal_places=2, help_text="Percentage e.g. 4.00 for 4%")
-    duration_days = models.IntegerField(default=3)
+    duration_days = models.IntegerField(default=5)
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
@@ -43,31 +43,30 @@ class UserInvestment(models.Model):
 
 
 class Transaction(models.Model):
-    TRANSACTION_TYPE = (
+    TRANSACTION_TYPES = (
         ('DEPOSIT', 'Deposit'),
         ('WITHDRAWAL', 'Withdrawal'),
-        ('INVESTMENT', 'Investment'),
-        ('REINVESTMENT', 'Reinvestment'),
-        ('EARNING', 'Earning'),
-        ('PRINCIPAL_RELEASE', 'Principal Release'),
+        ('CREDIT', 'Admin Credit'),
+        ('EARNING', 'Daily Earning'),
     )
+    
     STATUS_CHOICES = (
         ('PENDING', 'Pending'),
         ('APPROVED', 'Approved'),
         ('REJECTED', 'Rejected'),
     )
 
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='transactions')
-    transaction_type = models.CharField(max_length=30, choices=TRANSACTION_TYPE, default='DEPOSIT')
-    amount = models.DecimalField(max_digits=12, decimal_places=2, default='0.00')
-    payment_method = models.CharField(max_length=100, blank=True, null=True, default='USDT TRC20')
-    transaction_id = models.CharField(max_length=100, unique=True, blank=True, null=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='transactions')
+    transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES, default='DEPOSIT')
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    package_name = models.CharField(max_length=100, blank=True, null=True)
+    payment_method = models.CharField(max_length=50, blank=True, null=True, default='USDT TRC20')
+    transaction_id = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.user.username} - {self.transaction_type} (${self.amount})"
+        return f"{self.user.username} | {self.transaction_type} | ${self.amount}"
 
 
 class WithdrawalRequest(models.Model):
@@ -96,8 +95,8 @@ class Deposit(models.Model):
     )
     
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='deposits')
-    plan = models.ForeignKey(InvestmentPlan, on_delete=models.SET_NULL, null=True, blank=True, related_name='deposits')
-    gateway = models.CharField(max_length=100, default='USDT TRC20')
+    plan = models.ForeignKey('InvestmentPlan', on_delete=models.SET_NULL, null=True, blank=True, related_name='deposits')
+    gateway = models.CharField(max_length=100)  # e.g., "USDT TRC20" or "Account Balance"
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     transaction_id = models.CharField(max_length=100, unique=True, blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
@@ -108,21 +107,23 @@ class Deposit(models.Model):
         ordering = ['-created_at']
 
     def save(self, *args, **kwargs):
+        # Check if an existing deposit is being updated to 'APPROVED' by admin
         if self.pk:
             old_instance = Deposit.objects.filter(pk=self.pk).first()
             if old_instance and old_instance.status != 'APPROVED' and self.status == 'APPROVED':
                 
                 if self.plan:
-                    # 1. Plan-based deposit approved: Lock into ActiveInvestment
+                    # 1. If a plan is attached, lock capital into an ActiveInvestment
                     ActiveInvestment.objects.create(
                         user=self.user,
                         plan=self.plan,
                         amount=self.amount,
-                        daily_profit_percentage=getattr(self.plan, 'daily_profit', Decimal('4.00')),
+                        daily_profit_percentage=getattr(self.plan, 'daily_profit_percentage', 4.00),
                         duration_days=getattr(self.plan, 'duration_days', 3),
                         status='ACTIVE'
                     )
                     
+                    # Log transaction
                     Transaction.objects.create(
                         user=self.user,
                         transaction_type='INVESTMENT',
@@ -130,7 +131,7 @@ class Deposit(models.Model):
                         status='APPROVED'
                     )
                 else:
-                    # 2. General wallet deposit with NO plan -> Credit user balance directly
+                    # 2. General wallet funding with no plan -> credit user balance
                     self.user.balance += self.amount
                     self.user.save()
 
@@ -210,60 +211,36 @@ class Withdrawal(models.Model):
 class ActiveInvestment(models.Model):
     STATUS_CHOICES = (
         ('ACTIVE', 'Active'),
-        ('COMPLETED', 'Completed'),
-        ('CANCELLED', 'Cancelled'),
+        ('EXPIRED', 'Expired'),
     )
-
+    
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='active_investments')
-    plan = models.ForeignKey(InvestmentPlan, on_delete=models.SET_NULL, null=True, blank=True)
+    plan = models.ForeignKey('InvestmentPlan', on_delete=models.SET_NULL, null=True, blank=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
-    daily_profit_percentage = models.DecimalField(max_digits=5, decimal_places=2, default='4.00')
+    daily_profit_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=4.00)
     duration_days = models.IntegerField(default=3)
-    start_date = models.DateTimeField(auto_now_add=True)
-    end_date = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ACTIVE')
-    is_completed = models.BooleanField(default=False)
-
-    def __str__(self):
-        return f"{self.user.username} - ${self.amount} ({self.status})"
-
-    def calculate_accumulated_profit(self):
-        if not self.start_date:
-            return Decimal('0.00')
-        
-        now = timezone.now()
-        elapsed_seconds = (now - self.start_date).total_seconds()
-        elapsed_days = Decimal(str(elapsed_seconds)) / Decimal('86400')
-        
-        effective_days = min(elapsed_days, Decimal(str(self.duration_days)))
-        if effective_days < 0:
-            effective_days = Decimal('0.00')
-
-        daily_rate = self.daily_profit_percentage / Decimal('100.00')
-        total_profit = self.amount * daily_rate * effective_days
-        return total_profit.quantize(Decimal('0.01'))
+    created_at = models.DateTimeField(auto_now_add=True)
 
     def check_and_update_expiry(self):
-        if self.status == 'ACTIVE' and not self.is_completed:
-            if self.end_date and timezone.now() >= self.end_date:
-                self.status = 'COMPLETED'
-                self.is_completed = True
+        """Automatically expires the investment and returns principal to user balance once duration passes (runs strictly once)."""
+        if self.status == 'ACTIVE':
+            delta = timezone.now() - self.created_at
+            if delta.days >= self.duration_days:
+                self.status = 'EXPIRED'
                 self.save()
+                
+                # Release principal back to spendable user balance exactly once upon expiration
+                if self.user and self.amount:
+                    self.user.balance += self.amount
+                    self.user.save()
+                    
+        return self.status
 
-                # Release Principal back to User Balance upon expiration
-                user = self.user
-                user.balance += self.amount
-                user.save()
-
-                # Log Transaction for Principal Release
-                Transaction.objects.create(
-                    user=user,
-                    transaction_type='PRINCIPAL_RELEASE',
-                    amount=self.amount,
-                    status='APPROVED'
-                )
-
-    def save(self, *args, **kwargs):
-        if not self.end_date and self.start_date:
-            self.end_date = self.start_date + timedelta(days=self.duration_days)
-        super().save(*args, **kwargs)
+    def calculate_accumulated_profit(self):
+        """Calculates total profit earned so far for analytics (capped at plan duration)."""
+        delta = timezone.now() - self.created_at
+        days_elapsed = min(delta.days, self.duration_days)
+        
+        daily_profit = float(self.amount) * (float(self.daily_profit_percentage) / 100.0)
+        return round(daily_profit * days_elapsed, 2)
