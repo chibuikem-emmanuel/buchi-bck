@@ -22,12 +22,12 @@ class InvestmentPlan(models.Model):
     name = models.CharField(max_length=100)
     min_deposit = models.DecimalField(max_digits=12, decimal_places=2, default='100.00')
     max_deposit = models.DecimalField(max_digits=12, decimal_places=2, default='10000.00')
-    daily_profit = models.DecimalField(max_digits=5, decimal_places=2, help_text="Percentage e.g. 4.00 for 4%")
+    daily_profit = models.DecimalField(max_digits=5, decimal_places=2, help_text="Daily profit percentage e.g. 4.00 for 4%")
     duration_days = models.IntegerField(default=3)
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
-        return f"{self.name} ({self.daily_profit}% daily)"
+        return f"{self.name} ({self.daily_profit}% daily for {self.duration_days} days)"
 
 
 class UserInvestment(models.Model):
@@ -44,8 +44,7 @@ class Transaction(models.Model):
     TRANSACTION_TYPE = (
         ('DEPOSIT', 'Deposit'),
         ('WITHDRAWAL', 'Withdrawal'),
-        ('INVESTMENT', 'Investment'),
-        ('REINVESTMENT', 'Reinvestment'),
+        ('INVESTMENT', 'Investment Plan Deposit'),
         ('EARNING', 'Daily Earning'),
         ('PRINCIPAL_RELEASE', 'Principal Release'),
     )
@@ -89,8 +88,8 @@ class WithdrawalRequest(models.Model):
 class Deposit(models.Model):
     STATUS_CHOICES = (
         ('PENDING', 'Pending'),
-        ('APPROVED', 'Approved'),
-        ('REJECTED', 'Rejected'),
+        ('APPROVED', 'APPROVED'),
+        ('REJECTED', 'REJECTED'),
     )
     
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='deposits')
@@ -106,29 +105,30 @@ class Deposit(models.Model):
         ordering = ['-created_at']
 
     def save(self, *args, **kwargs):
+        # Check if this is an update transitioning from PENDING to APPROVED
         if self.pk:
             old_instance = Deposit.objects.filter(pk=self.pk).first()
             if old_instance and old_instance.status != 'APPROVED' and self.status == 'APPROVED':
                 
-                # Strict Routing: Plan-based deposits lock into ActiveInvestment. Balance is NEVER touched.
-                if self.plan:
+                if self.plan is not None:
+                    # 1. Plan-based deposit: Lock capital into ActiveInvestment. Balance is NOT touched.
                     ActiveInvestment.objects.create(
                         user=self.user,
                         plan=self.plan,
                         amount=self.amount,
-                        daily_profit_percentage=getattr(self.plan, 'daily_profit', Decimal('4.00')),
-                        duration_days=getattr(self.plan, 'duration_days', 3),
+                        daily_profit_percentage=self.plan.daily_profit,
+                        duration_days=self.plan.duration_days,
                         status='ACTIVE'
                     )
-                    
                     Transaction.objects.create(
                         user=self.user,
                         transaction_type='INVESTMENT',
                         amount=self.amount,
-                        status='APPROVED'
+                        status='APPROVED',
+                        transaction_id=f"INV-{self.transaction_id or self.id}"
                     )
                 else:
-                    # Only general wallet funding with NO plan funds the balance directly
+                    # 2. General wallet deposit (no plan): Funds spendable balance directly.
                     self.user.balance += self.amount
                     self.user.save()
 
@@ -136,7 +136,8 @@ class Deposit(models.Model):
                         user=self.user,
                         transaction_type='DEPOSIT',
                         amount=self.amount,
-                        status='APPROVED'
+                        status='APPROVED',
+                        transaction_id=f"DEP-{self.transaction_id or self.id}"
                     )
 
         super().save(*args, **kwargs)
@@ -207,9 +208,9 @@ class Withdrawal(models.Model):
 
 class ActiveInvestment(models.Model):
     STATUS_CHOICES = (
-        ('ACTIVE', 'Active'),
-        ('COMPLETED', 'Completed'),
-        ('CANCELLED', 'Cancelled'),
+        ('ACTIVE', 'ACTIVE'),
+        ('COMPLETED', 'COMPLETED'),
+        ('CANCELLED', 'CANCELLED'),
     )
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='active_investments')
@@ -225,14 +226,28 @@ class ActiveInvestment(models.Model):
     def __str__(self):
         return f"{self.user.username} - ${self.amount} ({self.status})"
 
+    def calculate_accumulated_profit(self):
+        """Calculates real-time daily earnings based on 24-hour cycles elapsed, capped at plan duration."""
+        if not self.start_date:
+            return Decimal('0.00')
+        
+        delta = timezone.now() - self.start_date
+        days_elapsed = min(Decimal(str(delta.total_seconds())) / Decimal('86400'), Decimal(str(self.duration_days)))
+        if days_elapsed < 0:
+            days_elapsed = Decimal('0.00')
+
+        daily_profit = self.amount * (self.daily_profit_percentage / Decimal('100.00'))
+        return (daily_profit * days_elapsed).quantize(Decimal('0.01'))
+
     def check_and_update_expiry(self):
-        """Automatically expires the investment and returns principal to user balance once duration passes."""
+        """Expires the investment once duration passes and releases principal back to spendable balance."""
         if self.status == 'ACTIVE' and not self.is_completed:
             if self.end_date and timezone.now() >= self.end_date:
                 self.status = 'COMPLETED'
                 self.is_completed = True
                 self.save()
 
+                # Release principal back to user balance exactly once upon expiry
                 if self.user and self.amount:
                     self.user.balance += self.amount
                     self.user.save()
@@ -243,19 +258,6 @@ class ActiveInvestment(models.Model):
                     amount=self.amount,
                     status='APPROVED'
                 )
-
-    def calculate_accumulated_profit(self):
-        """Calculates total profits earned so far for analytics (capped at plan duration)."""
-        if not self.start_date:
-            return Decimal('0.00')
-        
-        delta = timezone.now() - self.start_date
-        days_elapsed = min(Decimal(str(delta.total_seconds())) / Decimal('86400'), Decimal(str(self.duration_days)))
-        if days_elapsed < 0:
-            days_elapsed = Decimal('0.00')
-
-        daily_profit = float(self.amount) * (float(self.daily_profit_percentage) / 100.0)
-        return Decimal(str(daily_profit * float(days_elapsed))).quantize(Decimal('0.01'))
 
     def save(self, *args, **kwargs):
         if not self.end_date and self.start_date:
