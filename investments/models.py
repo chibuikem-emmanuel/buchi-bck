@@ -213,11 +213,11 @@ class ActiveInvestment(models.Model):
     )
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='active_investments')
-    plan = models.ForeignKey(InvestmentPlan, on_delete=models.SET_NULL, null=True, blank=True)
+    plan = models.ForeignKey('InvestmentPlan', on_delete=models.SET_NULL, null=True, blank=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     daily_profit_percentage = models.DecimalField(max_digits=5, decimal_places=2, default='4.00')
     duration_days = models.IntegerField(default=3)
-    start_date = models.DateTimeField(auto_now_add=True)
+    start_date = models.DateTimeField(default=timezone.now)  # Timezone-aware UTC timestamp
     end_date = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ACTIVE')
     is_completed = models.BooleanField(default=False)
@@ -227,14 +227,17 @@ class ActiveInvestment(models.Model):
 
     def calculate_accumulated_profit(self):
         """
-        Calculates progressive 24-hr daily earnings for analytics display (total_earned).
-        Does NOT touch or add to the spendable balance daily.
+        Calculates progressive earnings based on exact elapsed seconds (timezone-independent).
+        Works seamlessly across Nigeria, Asia, and all global regions.
         """
         if not self.start_date:
             return Decimal('0.00')
         
         delta = timezone.now() - self.start_date
-        days_elapsed = min(Decimal(str(delta.total_seconds())) / Decimal('86400'), Decimal(str(self.duration_days)))
+        total_seconds = Decimal(str(delta.total_seconds()))
+        
+        # 86400 seconds = exactly 24 hours (1 day)
+        days_elapsed = min(total_seconds / Decimal('86400'), Decimal(str(self.duration_days)))
         if days_elapsed < 0:
             days_elapsed = Decimal('0.00')
 
@@ -243,26 +246,33 @@ class ActiveInvestment(models.Model):
 
     def check_and_update_expiry(self):
         """
-        Releases principal back to user balance strictly once when duration days expire.
+        GUARANTEE: Principal remains strictly locked until absolute expiry time is reached.
+        Uses atomic locks and idempotency checks to prevent double-releases or early payouts.
         """
         if self.status == 'ACTIVE' and not self.is_completed:
             if self.end_date and timezone.now() >= self.end_date:
-                self.status = 'COMPLETED'
-                self.is_completed = True
-                self.save()
+                with transaction.atomic():
+                    inv = ActiveInvestment.objects.select_for_update().get(pk=self.pk)
+                    
+                    if inv.status == 'ACTIVE' and not inv.is_completed:
+                        inv.status = 'COMPLETED'
+                        inv.is_completed = True
+                        inv.save()
 
-                if self.user and self.amount:
-                    self.user.balance += self.amount
-                    self.user.save()
+                        # Release principal back to balance strictly upon expiry
+                        inv.user.balance += inv.amount
+                        inv.user.save()
 
-                Transaction.objects.create(
-                    user=self.user,
-                    transaction_type='PRINCIPAL_RELEASE',
-                    amount=self.amount,
-                    status='APPROVED'
-                )
+                        Transaction.objects.create(
+                            user=inv.user,
+                            transaction_type='PRINCIPAL_RELEASE',
+                            amount=inv.amount,
+                            status='APPROVED',
+                            transaction_id=f"REL-{inv.id}-{timezone.now().strftime('%Y%m%d%H%M%S')}"
+                        )
 
     def save(self, *args, **kwargs):
-        if not self.end_date and self.start_date:
-            self.end_date = self.start_date + timedelta(days=self.duration_days)
+        if not self.end_date:
+            base_date = self.start_date or timezone.now()
+            self.end_date = base_date + timedelta(days=self.duration_days)
         super().save(*args, **kwargs)

@@ -629,10 +629,6 @@ class UserDepositCreateView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        print("--- DEBUG DEPOSIT REQUEST DATA ---")
-        print("Request Data Received:", request.data)
-        print("Plan ID from request:", request.data.get('plan_id'))
-
         try:
             amount = Decimal(str(request.data.get('amount', 0)))
             gateway = request.data.get('gateway') or request.data.get('method', 'USDT TRC20')
@@ -646,7 +642,6 @@ class UserDepositCreateView(generics.GenericAPIView):
         plan = None
         if plan_id:
             plan = InvestmentPlan.objects.filter(pk=plan_id).first()
-            print("Resolved Plan Object from DB:", plan)
             if plan:
                 if amount < plan.min_deposit:
                     return Response({"error": f"Amount is below the minimum deposit of ${plan.min_deposit} for this plan."}, status=status.HTTP_400_BAD_REQUEST)

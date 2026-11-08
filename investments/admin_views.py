@@ -652,7 +652,7 @@ class AdminDepositsView(APIView):
             with transaction.atomic():
                 dep = Deposit.objects.select_for_update().get(pk=deposit_id)
                 
-                # Idempotency check
+                # Idempotency checks
                 if dep.status == 'APPROVED':
                     return Response({"success": True, "message": f"Deposit #{dep.id} was already approved."})
                 if dep.status == 'REJECTED':
@@ -662,7 +662,7 @@ class AdminDepositsView(APIView):
                     dep.status = 'APPROVED'
                     
                     if dep.plan is not None:
-                        # 1. Create ActiveInvestment for plan deposits (Balance is NOT touched)
+                        # 1. Create ActiveInvestment. Balance is NEVER touched.
                         ActiveInvestment.objects.create(
                             user=dep.user,
                             plan=dep.plan,
@@ -672,7 +672,7 @@ class AdminDepositsView(APIView):
                             status='ACTIVE'
                         )
                         
-                        # 2. Update the existing transaction or create one if missing, using the exact same transaction_id safely
+                        # 2. Update existing transaction record safely
                         if dep.transaction_id:
                             Transaction.objects.filter(transaction_id=dep.transaction_id).update(
                                 transaction_type='INVESTMENT',
@@ -680,7 +680,6 @@ class AdminDepositsView(APIView):
                                 amount=dep.amount
                             )
                         else:
-                            # Fallback if transaction_id was blank
                             Transaction.objects.create(
                                 user=dep.user,
                                 transaction_type='INVESTMENT',
@@ -688,7 +687,7 @@ class AdminDepositsView(APIView):
                                 status='APPROVED'
                             )
                     else:
-                        # General deposit: fund balance directly
+                        # General wallet deposit: funds balance directly
                         dep.user.balance += dep.amount
                         dep.user.save()
 
