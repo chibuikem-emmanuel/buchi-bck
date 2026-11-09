@@ -77,31 +77,30 @@ class UserDepositCreateView(generics.GenericAPIView):
     def post(self, request, *args, **kwargs):
         try:
             amount = Decimal(str(request.data.get('amount', 0)))
-            method = request.data.get('method') or request.data.get('gateway', 'USDT TRC20')
-            plan_id = request.data.get('plan_id')  # Capture plan if investing via crypto for a plan
+            gateway = request.data.get('gateway') or request.data.get('method', 'USDT TRC20')
+            plan_id = request.data.get('plan_id')
         except (ValueError, TypeError):
-            return Response({"error": "Invalid deposit amount"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Invalid deposit amount."}, status=status.HTTP_400_BAD_REQUEST)
 
         if amount <= 0:
-            return Response({"error": "Amount must be greater than zero"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Amount must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Optional: Validate plan bounds if plan_id is provided
         plan = None
         if plan_id:
             plan = InvestmentPlan.objects.filter(pk=plan_id).first()
             if plan:
                 if amount < plan.min_deposit:
-                    return Response({'error': f'Amount is below the minimum deposit of ${plan.min_deposit} for this plan.'}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response({"error": f"Amount is below the minimum deposit of ${plan.min_deposit} for this plan."}, status=status.HTTP_400_BAD_REQUEST)
                 if plan.max_deposit and amount > plan.max_deposit:
-                    return Response({'error': f'Amount exceeds the maximum deposit of ${plan.max_deposit} for this plan.'}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response({"error": f"Amount exceeds the maximum deposit of ${plan.max_deposit} for this plan."}, status=status.HTTP_400_BAD_REQUEST)
 
-        unique_tx_id = f"TX-{uuid.uuid4().hex[:10].upper()}"
+        unique_tx_id = request.data.get('transaction_id') or f"TX-{uuid.uuid4().hex[:10].upper()}"
 
-        # 1. Create the official Deposit record (This is what the admin dashboard approves!)
+        # 1. Create PENDING Deposit record with the plan linked
         deposit = Deposit.objects.create(
             user=request.user,
-            plan=plan,  # Safely links the investment plan!
-            gateway=method,
+            plan=plan,
+            gateway=gateway,
             amount=amount,
             transaction_id=unique_tx_id,
             status='PENDING'
@@ -112,6 +111,7 @@ class UserDepositCreateView(generics.GenericAPIView):
             user=request.user,
             transaction_type='INVESTMENT' if plan else 'DEPOSIT',
             amount=amount,
+            transaction_id=unique_tx_id,
             status='PENDING'
         )
 

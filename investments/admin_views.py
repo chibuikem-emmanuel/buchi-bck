@@ -652,7 +652,6 @@ class AdminDepositsView(APIView):
             with transaction.atomic():
                 dep = Deposit.objects.select_for_update().get(pk=deposit_id)
                 
-                # Idempotency checks
                 if dep.status == 'APPROVED':
                     return Response({"success": True, "message": f"Deposit #{dep.id} was already approved."})
                 if dep.status == 'REJECTED':
@@ -662,7 +661,7 @@ class AdminDepositsView(APIView):
                     dep.status = 'APPROVED'
                     
                     if dep.plan is not None:
-                        # 1. Create ActiveInvestment. Balance is NEVER touched.
+                        # Plan-linked deposit: Quarantined into ActiveInvestment. Balance is NEVER touched.
                         ActiveInvestment.objects.create(
                             user=dep.user,
                             plan=dep.plan,
@@ -672,7 +671,6 @@ class AdminDepositsView(APIView):
                             status='ACTIVE'
                         )
                         
-                        # 2. Update existing transaction record safely
                         if dep.transaction_id:
                             Transaction.objects.filter(transaction_id=dep.transaction_id).update(
                                 transaction_type='INVESTMENT',
@@ -687,7 +685,7 @@ class AdminDepositsView(APIView):
                                 status='APPROVED'
                             )
                     else:
-                        # General wallet deposit: funds balance directly
+                        # General deposit: Funds spendable wallet balance directly
                         dep.user.balance += dep.amount
                         dep.user.save()
 
@@ -855,4 +853,21 @@ class AdminWithdrawalDetailView(generics.RetrieveAPIView):
 #     permission_classes = [IsAdminUser] # Or your custom admin permission
 #     queryset = DepositRequest.objects.all()
 #     serializer_class = DepositRequestSerializer
+
+
+class AdminExpiringDepositsView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request, format=None):
+        active_investments = ActiveInvestment.objects.select_related('user', 'plan').filter(status='ACTIVE')
+        
+        expiring = [{
+            "id": inv.id,
+            "username": inv.user.username if inv.user else "Unknown",
+            "plan_name": inv.plan.name if inv.plan else "Custom Plan",
+            "amount": str(inv.amount),
+            "expires_at": inv.end_date.strftime('%b-%d-%Y %I:%M:%S %p') if inv.end_date else "N/A"
+        } for inv in active_investments]
+        
+        return Response(expiring, status=status.HTTP_200_OK)
 

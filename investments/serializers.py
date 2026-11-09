@@ -71,6 +71,14 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'btc_address', 'usdt_trc20', 'usdt_erc20', 'eth_address', 'bnb_address'
         ]
 
+    def _process_user_expiries(self, obj):
+        """On-demand lazy expiry check whenever user metrics are requested."""
+        active_invs = getattr(obj, 'active_investments', None)
+        if active_invs:
+            for inv in active_invs.filter(status='ACTIVE', is_completed=False):
+                if hasattr(inv, 'check_and_update_expiry'):
+                    inv.check_and_update_expiry()
+
     def get_deposited(self, obj):
         total = obj.deposits.filter(status='APPROVED').aggregate(Sum('amount'))['amount__sum']
         return float(total or 0.00)
@@ -79,14 +87,15 @@ class UserProfileSerializer(serializers.ModelSerializer):
         return self.get_deposited(obj)
 
     def get_active_investment(self, obj):
-        investments = getattr(obj, 'active_investments', None) or getattr(obj, 'userinvestments', None)
+        self._process_user_expiries(obj)
+        investments = getattr(obj, 'active_investments', None)
         if investments:
             total = investments.filter(status='ACTIVE').aggregate(Sum('amount'))['amount__sum']
             return float(total or 0.00)
         return 0.00
 
     def get_total_earned(self, obj):
-        investments = getattr(obj, 'active_investments', None) or getattr(obj, 'userinvestments', None)
+        investments = getattr(obj, 'active_investments', None)
         earned = 0.00
         if investments:
             for inv in investments.filter(status='ACTIVE'):

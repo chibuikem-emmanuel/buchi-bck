@@ -104,42 +104,8 @@ class Deposit(models.Model):
     class Meta:
         ordering = ['-created_at']
 
-    def save(self, *args, **kwargs):
-        if self.pk:
-            old_instance = Deposit.objects.filter(pk=self.pk).first()
-            if old_instance and old_instance.status != 'APPROVED' and self.status == 'APPROVED':
-                
-                # RULE 1: Plan-based deposit approved -> Lock principal into ActiveInvestment. BALANCE IS NOT TOUCHED.
-                if self.plan is not None:
-                    ActiveInvestment.objects.create(
-                        user=self.user,
-                        plan=self.plan,
-                        amount=self.amount,
-                        daily_profit_percentage=self.plan.daily_profit,
-                        duration_days=self.plan.duration_days,
-                        status='ACTIVE'
-                    )
-                    Transaction.objects.create(
-                        user=self.user,
-                        transaction_type='INVESTMENT',
-                        amount=self.amount,
-                        status='APPROVED',
-                        transaction_id=f"INV-{self.transaction_id or self.id}"
-                    )
-                else:
-                    # RULE 2: General wallet funding (no plan) -> Credits balance directly.
-                    self.user.balance += self.amount
-                    self.user.save()
-
-                    Transaction.objects.create(
-                        user=self.user,
-                        transaction_type='DEPOSIT',
-                        amount=self.amount,
-                        status='APPROVED',
-                        transaction_id=f"DEP-{self.transaction_id or self.id}"
-                    )
-
-        super().save(*args, **kwargs)
+    def __str__(self):
+        return f"{self.user.username} - ${self.amount} ({self.status})"
 
 
 
@@ -217,7 +183,7 @@ class ActiveInvestment(models.Model):
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     daily_profit_percentage = models.DecimalField(max_digits=5, decimal_places=2, default='4.00')
     duration_days = models.IntegerField(default=3)
-    start_date = models.DateTimeField(default=timezone.now)  # Timezone-aware UTC timestamp
+    start_date = models.DateTimeField(default=timezone.now)  # UTC Timezone-aware timestamp
     end_date = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ACTIVE')
     is_completed = models.BooleanField(default=False)
@@ -227,7 +193,7 @@ class ActiveInvestment(models.Model):
 
     def calculate_accumulated_profit(self):
         """
-        Calculates progressive earnings based on exact elapsed seconds (timezone-independent).
+        Calculates progressive earnings based on exact elapsed seconds.
         Works seamlessly across Nigeria, Asia, and all global regions.
         """
         if not self.start_date:
@@ -246,20 +212,19 @@ class ActiveInvestment(models.Model):
 
     def check_and_update_expiry(self):
         """
-        GUARANTEE: Principal remains strictly locked until absolute expiry time is reached.
-        Uses atomic locks and idempotency checks to prevent double-releases or early payouts.
+        Releases principal back to balance strictly when absolute expiry time is reached.
+        Uses atomic select_for_update to guarantee safety.
         """
         if self.status == 'ACTIVE' and not self.is_completed:
             if self.end_date and timezone.now() >= self.end_date:
                 with transaction.atomic():
                     inv = ActiveInvestment.objects.select_for_update().get(pk=self.pk)
-                    
                     if inv.status == 'ACTIVE' and not inv.is_completed:
                         inv.status = 'COMPLETED'
                         inv.is_completed = True
                         inv.save()
 
-                        # Release principal back to balance strictly upon expiry
+                        # Release principal strictly upon expiration
                         inv.user.balance += inv.amount
                         inv.user.save()
 
