@@ -107,6 +107,10 @@ class Deposit(models.Model):
     def __str__(self):
         return f"{self.user.username} - ${self.amount} ({self.status})"
 
+    def save(self, *args, **kwargs):
+        # Pure database save. No balance modification here.
+        super().save(*args, **kwargs)
+
 
 
 

@@ -616,31 +616,6 @@ class AdminExpiringDepositsView(APIView):
 class AdminDepositsView(APIView):
     permission_classes = [permissions.IsAdminUser]
 
-    def get(self, request, *args, **kwargs):
-        user_id = request.query_params.get('user_id')
-        status_param = request.query_params.get('status')
-        
-        deposits = Deposit.objects.select_related('user', 'plan').all()
-        
-        if user_id:
-            deposits = deposits.filter(user_id=user_id)
-            
-        if status_param:
-            deposits = deposits.filter(status__iexact=status_param.strip())
-
-        data = [{
-            "id": d.id,
-            "username": d.user.username if d.user else "Unknown",
-            "user_email": d.user.email if d.user else "",
-            "plan_name": d.plan.name if d.plan else None,
-            "gateway": d.gateway,
-            "amount": str(d.amount),
-            "transaction_id": d.transaction_id,
-            "status": d.status,
-            "created_at": d.created_at.strftime('%Y-%m-%d %H:%M'),
-        } for d in deposits]
-        return Response(data, status=status.HTTP_200_OK)
-
     def post(self, request, pk=None, *args, **kwargs):
         deposit_id = request.data.get('deposit_id') or pk
         action = request.data.get('action')
@@ -659,9 +634,10 @@ class AdminDepositsView(APIView):
 
                 if action == 'approve':
                     dep.status = 'APPROVED'
+                    dep.save()
                     
                     if dep.plan is not None:
-                        # Plan-linked deposit: Quarantined into ActiveInvestment. Balance is NEVER touched.
+                        # RULE: Plan deposit -> Locks principal in ActiveInvestment. Balance is NOT touched.
                         ActiveInvestment.objects.create(
                             user=dep.user,
                             plan=dep.plan,
@@ -671,48 +647,33 @@ class AdminDepositsView(APIView):
                             status='ACTIVE'
                         )
                         
-                        if dep.transaction_id:
-                            Transaction.objects.filter(transaction_id=dep.transaction_id).update(
-                                transaction_type='INVESTMENT',
-                                status='APPROVED',
-                                amount=dep.amount
-                            )
-                        else:
-                            Transaction.objects.create(
-                                user=dep.user,
-                                transaction_type='INVESTMENT',
-                                amount=dep.amount,
-                                status='APPROVED'
-                            )
+                        Transaction.objects.create(
+                            user=dep.user,
+                            transaction_type='INVESTMENT',
+                            amount=dep.amount,
+                            status='APPROVED',
+                            transaction_id=f"INV-{dep.transaction_id or dep.id}"
+                        )
                     else:
-                        # General deposit: Funds spendable wallet balance directly
+                        # RULE: General deposit (no plan) -> Credits balance directly.
                         dep.user.balance += dep.amount
                         dep.user.save()
 
-                        if dep.transaction_id:
-                            Transaction.objects.filter(transaction_id=dep.transaction_id).update(
-                                transaction_type='DEPOSIT',
-                                status='APPROVED',
-                                amount=dep.amount
-                            )
-                        else:
-                            Transaction.objects.create(
-                                user=dep.user,
-                                transaction_type='DEPOSIT',
-                                amount=dep.amount,
-                                status='APPROVED'
-                            )
+                        Transaction.objects.create(
+                            user=dep.user,
+                            transaction_type='DEPOSIT',
+                            amount=dep.amount,
+                            status='APPROVED',
+                            transaction_id=f"DEP-{dep.transaction_id or dep.id}"
+                        )
 
-                    dep.save()
                     return Response({"success": True, "message": f"Deposit #{dep.id} approved successfully!"})
 
                 elif action == 'reject':
                     dep.status = 'REJECTED'
                     dep.save()
-                    
                     if dep.transaction_id:
                         Transaction.objects.filter(transaction_id=dep.transaction_id).update(status='REJECTED')
-
                     return Response({"success": True, "message": f"Deposit #{dep.id} has been rejected."})
 
                 return Response({"error": "Invalid action parameter."}, status=status.HTTP_400_BAD_REQUEST)
