@@ -596,25 +596,51 @@ class AdminInvestmentPlanDetailView(APIView):
         except InvestmentPlan.DoesNotExist:
             return Response({"error": "Investment plan not found"}, status=status.HTTP_404_NOT_FOUND)
 
-class AdminExpiringDepositsView(APIView):
-    permission_classes = [permissions.IsAdminUser]
+# class AdminExpiringDepositsView(APIView):
+#     permission_classes = [permissions.IsAdminUser]
 
-    def get(self, request, format=None):
-        expiring = [
-            {
-                "id": 1,
-                "username": "K38kamran",
-                "plan_name": "BASIC PLAN",
-                "amount": "670.00",
-                "expires_at": "Oct-15-2026 12:00:00 PM"
-            }
-        ]
-        return Response(expiring, status=status.HTTP_200_OK)
+#     def get(self, request, format=None):
+#         expiring = [
+#             {
+#                 "id": 1,
+#                 "username": "K38kamran",
+#                 "plan_name": "BASIC PLAN",
+#                 "amount": "670.00",
+#                 "expires_at": "Oct-15-2026 12:00:00 PM"
+#             }
+#         ]
+#         return Response(expiring, status=status.HTTP_200_OK)
     
 
 
-class AdminDepositsView(APIView):
+class AdminDepositsView(generics.GenericAPIView):
     permission_classes = [permissions.IsAdminUser]
+    queryset = Deposit.objects.select_related('user', 'plan').all()
+
+    def get(self, request, *args, **kwargs):
+        user_id = request.query_params.get('user_id')
+        status_param = request.query_params.get('status')
+        
+        deposits = self.get_queryset()
+        
+        if user_id:
+            deposits = deposits.filter(user_id=user_id)
+            
+        if status_param:
+            deposits = deposits.filter(status__iexact=status_param.strip())
+
+        data = [{
+            "id": d.id,
+            "username": d.user.username if d.user else "Unknown",
+            "user_email": d.user.email if d.user else "",
+            "plan_name": d.plan.name if d.plan else None,
+            "gateway": d.gateway,
+            "amount": str(d.amount),
+            "transaction_id": d.transaction_id,
+            "status": d.status,
+            "created_at": d.created_at.strftime('%Y-%m-%d %H:%M'),
+        } for d in deposits]
+        return Response(data, status=status.HTTP_200_OK)
 
     def post(self, request, pk=None, *args, **kwargs):
         deposit_id = request.data.get('deposit_id') or pk
@@ -816,11 +842,12 @@ class AdminWithdrawalDetailView(generics.RetrieveAPIView):
 #     serializer_class = DepositRequestSerializer
 
 
-class AdminExpiringDepositsView(APIView):
+class AdminExpiringDepositsView(generics.GenericAPIView):
     permission_classes = [permissions.IsAdminUser]
+    queryset = ActiveInvestment.objects.select_related('user', 'plan').filter(status='ACTIVE')
 
-    def get(self, request, format=None):
-        active_investments = ActiveInvestment.objects.select_related('user', 'plan').filter(status='ACTIVE')
+    def get(self, request, *args, **kwargs):
+        active_investments = self.get_queryset()
         
         expiring = [{
             "id": inv.id,
@@ -831,4 +858,42 @@ class AdminExpiringDepositsView(APIView):
         } for inv in active_investments]
         
         return Response(expiring, status=status.HTTP_200_OK)
+
+    def post(self, request, *args, **kwargs):
+        investment_id = request.data.get('investment_id') or request.data.get('id')
+
+        if not investment_id:
+            return Response({"error": "investment_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            with transaction.atomic():
+                inv = ActiveInvestment.objects.select_for_update().get(pk=investment_id)
+
+                if inv.status != 'ACTIVE' or inv.is_completed:
+                    return Response({"error": "This investment is already completed or inactive."}, status=status.HTTP_400_BAD_REQUEST)
+
+                inv.status = 'COMPLETED'
+                inv.is_completed = True
+                inv.save()
+
+                inv.user.balance += inv.amount
+                inv.user.save()
+
+                Transaction.objects.create(
+                    user=inv.user,
+                    transaction_type='PRINCIPAL_RELEASE',
+                    amount=inv.amount,
+                    status='APPROVED',
+                    transaction_id=f"ADMIN-REL-{inv.id}-{timezone.now().strftime('%Y%m%d%H%M%S')}"
+                )
+
+                return Response({
+                    "success": True, 
+                    "message": f"Successfully released ${inv.amount} principal back to {inv.user.username}'s balance!"
+                }, status=status.HTTP_200_OK)
+
+        except ActiveInvestment.DoesNotExist:
+            return Response({"error": "Active investment record not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 

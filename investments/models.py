@@ -245,3 +245,5 @@ class ActiveInvestment(models.Model):
             base_date = self.start_date or timezone.now()
             self.end_date = base_date + timedelta(days=self.duration_days)
         super().save(*args, **kwargs)
+
+

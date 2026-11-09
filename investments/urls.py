@@ -44,6 +44,12 @@ urlpatterns = [
     path('admin/expiring-deposits/', AdminExpiringDepositsView.as_view()),
 
 
+
+
+    
+    
+
+
     path('admin/processings/', AdminProcessingsView.as_view()),
     path('admin/processings/<int:pk>/', AdminProcessingsView.as_view()),
 
