@@ -15,7 +15,6 @@ class UserSerializer(serializers.ModelSerializer):
     total_earned = serializers.SerializerMethodField()
     withdrew_total = serializers.SerializerMethodField()
     total_referrals = serializers.SerializerMethodField()
-    balance = serializers.SerializerMethodField()
     referral_bonus_earned = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True, default=0.00)
 
     class Meta:
@@ -24,17 +23,8 @@ class UserSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'phone_number', 'balance', 
             'total_invested', 'total_earned', 'is_staff', 'is_superuser', 
             'is_blacklisted', 'deposited', 'total_deposit', 'active_investment', 
-            'withdrew_total', 'total_referrals', 'referral_bonus_earned',
-            'btc_address', 'usdt_trc20', 'usdt_erc20', 'eth_address', 'bnb_address'
+            'withdrew_total', 'total_referrals', 'referral_bonus_earned'
         ]
-
-    def _process_user_expiries(self, obj):
-        """On-demand lazy expiry check whenever user metrics are requested."""
-        active_invs = getattr(obj, 'active_investments', None)
-        if active_invs:
-            for inv in active_invs.filter(status='ACTIVE', is_completed=False):
-                if hasattr(inv, 'check_and_update_expiry'):
-                    inv.check_and_update_expiry()
 
     def get_deposited(self, obj):
         total = obj.deposits.filter(status='APPROVED').aggregate(Sum('amount'))['amount__sum']
@@ -44,7 +34,6 @@ class UserSerializer(serializers.ModelSerializer):
         return self.get_deposited(obj)
 
     def get_active_investment(self, obj):
-        self._process_user_expiries(obj)
         investments = getattr(obj, 'active_investments', None)
         if investments:
             total = investments.filter(status='ACTIVE').aggregate(Sum('amount'))['amount__sum']
@@ -67,9 +56,6 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_total_referrals(self, obj):
         return obj.referrals.count() if hasattr(obj, 'referrals') else 0
-
-    def get_balance(self, obj):
-        return float(getattr(obj, 'balance', 0.00))
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
