@@ -10,7 +10,7 @@ from django.db import transaction
 from django.db.models import Q
 from investments.models import Transaction
 
-from .serializers import CustomTokenObtainPairSerializer, RegisterSerializer, UserSerializer
+from .serializers import CustomTokenObtainPairSerializer, RegisterSerializer, UserSerializer, UserProfileSerializer
 
 User = get_user_model()
 
@@ -23,7 +23,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 #     permission_classes = [permissions.AllowAny]
 
 class UserProfileView(generics.RetrieveAPIView):
-    serializer_class = UserSerializer
+    serializer_class = UserProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
