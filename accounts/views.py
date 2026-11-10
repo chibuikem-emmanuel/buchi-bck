@@ -23,7 +23,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 #     permission_classes = [permissions.AllowAny]
 
 class UserProfileView(generics.RetrieveAPIView):
-    serializer_class = UserProfileSerializer
+    serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
