@@ -8,7 +8,7 @@ class Command(BaseCommand):
     help = 'Ensures a default superuser exists and updates password if needed'
 
     def handle(self, *args, **options):
-        email = os.environ.get('DJANGO_SUPERUSER_EMAIL', 'admin@crystalsinvestments.org')
+        email = os.environ.get('DJANGO_SUPERUSER_EMAIL', 'admin@groveassetsltd.com')
         password = os.environ.get('DJANGO_SUPERUSER_PASSWORD', 'supersecurepass123')
         username = 'admin'
 
