@@ -115,6 +115,14 @@ class UserDepositCreateView(generics.GenericAPIView):
             status='PENDING'
         )
 
+        # 3. Trigger instant push & professional email notification
+        send_admin_alert(
+            title="💰 New Deposit Submitted",
+            message=f"User: {request.user.username}\nAmount: ${amount:,.2f}\nGateway: {gateway}\nReference: {unique_tx_id}",
+            priority="urgent",
+            tags="moneybag"
+        )
+
         return Response({
             "success": True, 
             "message": f"Deposit request of ${amount:.2f} submitted! Awaiting admin confirmation.",
@@ -122,7 +130,6 @@ class UserDepositCreateView(generics.GenericAPIView):
             "transaction_id": unique_tx_id
         }, status=status.HTTP_201_CREATED)
 
-# crystals_core/investments/views.py
 
 class UserWithdrawalCreateView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -130,35 +137,59 @@ class UserWithdrawalCreateView(generics.GenericAPIView):
     def post(self, request, *args, **kwargs):
         try:
             amount = float(request.data.get('amount', 0))
-            method = request.data.get('method', 'USDT TRC20')
+            method = request.data.get('method') or request.data.get('gateway', 'USDT TRC20')
+            wallet_address = request.data.get('wallet_address') or request.data.get('payout_address')
         except (ValueError, TypeError):
-            return Response({"error": "Invalid withdrawal amount"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Invalid withdrawal amount or data format."}, status=status.HTTP_400_BAD_REQUEST)
 
         if amount <= 0:
-            return Response({"error": "Amount must be greater than zero"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Amount must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 1. Create the Pending Withdrawal Request for the Admin Dashboard
-        withdrawal = WithdrawalRequest.objects.create(
-            user=request.user,
-            amount=amount,
-            method=method,
-            status='PENDING' # MUST BE EXACTLY UPPERCASE 'PENDING'
-        )
+        try:
+            with transaction.atomic():
+                user = request.user
+                profile = getattr(user, 'profile', user)  # Handles profile or direct balance field
 
-        # 2. Also log the Transaction record
-        Transaction.objects.create(
-            user=request.user,
-            transaction_type='WITHDRAWAL',
-            amount=amount,
-            payment_method=method,
-            status='PENDING'
-        )
+                if float(profile.balance) < amount:
+                    return Response({"error": "Insufficient balance for this withdrawal."}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response({
-            "success": True, 
-            "message": f"Withdrawal request of ${amount:.2f} submitted successfully!",
-            "withdrawal_id": withdrawal.id
-        })
+                # Deduct balance immediately upon request (held in escrow)
+                profile.balance = float(profile.balance) - amount
+                profile.save()
+
+                # 1. Create the Pending Withdrawal Request for the Admin Dashboard
+                withdrawal = WithdrawalRequest.objects.create(
+                    user=user,
+                    amount=amount,
+                    method=method,
+                    status='PENDING'  # EXACTLY UPPERCASE 'PENDING'
+                )
+
+                # 2. Also log the Transaction record
+                Transaction.objects.create(
+                    user=user,
+                    transaction_type='WITHDRAWAL',
+                    amount=amount,
+                    payment_method=method,
+                    status='PENDING'
+                )
+
+                # 3. Trigger instant push & professional email notification
+                send_admin_alert(
+                    title="🚨 New Withdrawal Request",
+                    message=f"User: {user.username}\nAmount: ${amount:,.2f}\nMethod: {method}\nWallet: {wallet_address or 'N/A'}",
+                    priority="urgent",
+                    tags="rotating_light"
+                )
+
+                return Response({
+                    "success": True, 
+                    "message": f"Withdrawal request of ${amount:.2f} submitted successfully!",
+                    "withdrawal_id": withdrawal.id
+                }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 
