@@ -26,7 +26,6 @@ def _dispatch_alert(title: str, message: str, priority: str = "default", tags: s
     # 2. Send email alert to your inbox via Resend using your custom domain
     try:
         admin_email = getattr(settings, "ADMIN_ALERT_EMAIL", "")
-        # Use your professional domain address here:
         sender_email = getattr(settings, "DEFAULT_FROM_EMAIL", "support@groveassetsltd.com")
         
         if admin_email and resend.api_key:
