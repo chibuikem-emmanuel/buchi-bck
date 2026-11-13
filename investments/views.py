@@ -65,6 +65,8 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from .models import Transaction, InvestmentPlan
 from .serializers import TransactionSerializer, InvestmentPlanSerializer
+# Import it using your core project name instead of a dot
+from crystals_core.notifications import send_admin_alert
 
 class InvestmentPlanListView(generics.ListAPIView):
     queryset = InvestmentPlan.objects.all()
