@@ -48,7 +48,7 @@ INSTALLED_APPS = [
 
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 ADMIN_ALERT_EMAIL = "buchipellas@gmail.com"
-NTFY_TOPIC = "grove-assets-admin-alerts-ek928374"
+NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "grove-assets-admin-alerts-xyz987")
 DEFAULT_FROM_EMAIL = "support@groveassetsltd.com"
 
 MIDDLEWARE = [

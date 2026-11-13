@@ -1,4 +1,5 @@
 # notifications.py
+import os
 import threading
 import requests
 import resend
@@ -9,7 +10,8 @@ resend.api_key = getattr(settings, "RESEND_API_KEY", "")
 def _dispatch_alert(title: str, message: str, priority: str = "default", tags: str = "bell"):
     # 1. Send instant push notification to your phone via ntfy.sh
     try:
-        topic = getattr(settings, "NTFY_TOPIC", "grove-assets-admin-alerts")
+        # Pulls from Django settings (which pulls from Render env vars)
+        topic = getattr(settings, "NTFY_TOPIC", "grove-assets-admin-alerts-xyz987")
         requests.post(
             f"https://ntfy.sh/{topic}",
             data=message.encode("utf-8"),
@@ -23,7 +25,7 @@ def _dispatch_alert(title: str, message: str, priority: str = "default", tags: s
     except Exception as e:
         print(f"Push alert failed: {e}")
 
-    # 2. Send email alert to your inbox via Resend using your custom domain
+    # 2. Send email alert to your inbox via Resend
     try:
         admin_email = getattr(settings, "ADMIN_ALERT_EMAIL", "")
         sender_email = getattr(settings, "DEFAULT_FROM_EMAIL", "support@groveassetsltd.com")
