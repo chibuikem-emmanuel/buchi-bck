@@ -46,10 +46,13 @@ INSTALLED_APPS = [
     'chat',
 ]
 
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
-ADMIN_ALERT_EMAIL = "buchipellas@gmail.com"
+import os
+
+# Ensure these pull directly from Render's environment variables
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+ADMIN_ALERT_EMAIL = os.environ.get("ADMIN_ALERT_EMAIL", "buchipellas@gmail.com")
 NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "grove-assets-admin-alerts-xyz987")
-DEFAULT_FROM_EMAIL = "support@groveassetsltd.com"
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "support@groveassetsltd.com")
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
@@ -68,6 +71,11 @@ MIDDLEWARE = [
 CORS_ALLOWED_ORIGINS = [
     "https://crystalsinvestments.vercel.app",
     "http://localhost:3000",
+]
+
+CORS_ALLOWED_ORIGINS = [
+    "https://www.groveassetsltd.com",
+    "https://groveassetsltd.com",
 ]
 
 extra_origins = os.environ.get('CORS_ALLOWED_ORIGINS')
