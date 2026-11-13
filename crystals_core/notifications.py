@@ -1,50 +1,51 @@
 # notifications.py
 import os
-import threading
+import traceback
 import requests
 import resend
 from django.conf import settings
 
 resend.api_key = getattr(settings, "RESEND_API_KEY", "")
 
-def _dispatch_alert(title: str, message: str, priority: str = "default", tags: str = "bell"):
+def send_admin_alert(title: str, message: str, priority: str = "default", tags: str = "bell"):
+    """Runs alerts synchronously so we can see any errors directly in Render logs."""
+    
     # 1. Send instant push notification to your phone via ntfy.sh
     try:
-        # Pulls from Django settings (which pulls from Render env vars)
         topic = getattr(settings, "NTFY_TOPIC", "grove-assets-admin-alerts-xyz987")
-        requests.post(
+        print(f"Attempting to send ntfy alert to topic: {topic}")
+        
+        response = requests.post(
             f"https://ntfy.sh/{topic}",
             data=message.encode("utf-8"),
             headers={
                 "Title": title,
-                "Priority": priority,  # "high" or "urgent" makes your phone buzz/ring immediately
+                "Priority": priority,
                 "Tags": tags,
             },
             timeout=5,
         )
+        print(f"NTFY Response Status: {response.status_code}, Body: {response.text}")
     except Exception as e:
-        print(f"Push alert failed: {e}")
+        print("=== NTFY ERROR ===")
+        traceback.print_exc()
 
     # 2. Send email alert to your inbox via Resend
     try:
         admin_email = getattr(settings, "ADMIN_ALERT_EMAIL", "")
         sender_email = getattr(settings, "DEFAULT_FROM_EMAIL", "support@groveassetsltd.com")
         
+        print(f"Attempting to send Resend email to: {admin_email} from {sender_email}")
+        print(f"Resend API Key loaded: {bool(resend.api_key)}")
+        
         if admin_email and resend.api_key:
-            resend.Emails.send({
+            res_result = resend.Emails.send({
                 "from": f"Grove Assets <{sender_email}>",
                 "to": [admin_email],
                 "subject": f"[Grove Assets Alert] {title}",
                 "text": message,
             })
+            print(f"Resend Success Result: {res_result}")
     except Exception as e:
-        print(f"Resend email alert failed: {e}")
-
-def send_admin_alert(title: str, message: str, priority: str = "default", tags: str = "bell"):
-    """Runs alerts in a background thread so user API requests never lag."""
-    thread = threading.Thread(
-        target=_dispatch_alert,
-        args=(title, message, priority, tags),
-        daemon=True,
-    )
-    thread.start()
+        print("=== RESEND ERROR ===")
+        traceback.print_exc()
