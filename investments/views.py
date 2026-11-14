@@ -317,11 +317,19 @@ class UserWithdrawalCreateView(generics.GenericAPIView):
             status='PENDING'
         )
 
+        # Trigger instant push & email alert for withdrawal request
+        send_admin_alert(
+            title="🚨 New Withdrawal Request",
+            message=f"User: {request.user.username}\nAmount: ${amount:,.2f}\nMethod: {method}\nRequest ID: #{withdrawal.id}",
+            priority="urgent",
+            tags="bank"
+        )
+
         return Response({
             "success": True, 
             "message": f"Withdrawal request of ${amount:.2f} submitted successfully!",
             "id": withdrawal.id
-        })
+        }, status=status.HTTP_201_CREATED)
 
 
 
