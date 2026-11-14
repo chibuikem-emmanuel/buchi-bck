@@ -617,6 +617,14 @@ class UserInvestPlanView(generics.GenericAPIView):
                     status='APPROVED'
                 )
 
+                # Trigger alert for balance reinvestment
+                send_admin_alert(
+                    title="⚡ Plan Reinvested (Balance)",
+                    message=f"User: {request.user.username}\nPlan: {plan.name}\nAmount: ${amount:,.2f}\nMethod: Account Balance",
+                    priority="default",
+                    tags="zap"
+                )
+
                 return Response({
                     'success': True,
                     'message': 'Plan activated successfully!',
@@ -645,6 +653,14 @@ class UserInvestPlanView(generics.GenericAPIView):
                     transaction_type='INVESTMENT',
                     amount=amount,
                     status='PENDING'
+                )
+
+                # Trigger instant push & email alert for crypto deposit
+                send_admin_alert(
+                    title="💰 New Deposit / Investment Order",
+                    message=f"User: {request.user.username}\nPlan: {plan.name}\nAmount: ${amount:,.2f}\nGateway: {payment_method or 'Crypto Deposit'}\nReference: {unique_tx_id}",
+                    priority="urgent",
+                    tags="moneybag"
                 )
 
                 return Response({
