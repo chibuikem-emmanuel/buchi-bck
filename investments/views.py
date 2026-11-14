@@ -288,52 +288,40 @@ class UserWithdrawalCreateView(generics.GenericAPIView):
 
     def post(self, request, *args, **kwargs):
         try:
-            gateway = request.data.get('gateway')
             amount = float(request.data.get('amount', 0))
-            wallet_address = request.data.get('wallet_address', '').strip()
+            method = request.data.get('method', 'USDT TRC20')
+        except (ValueError, TypeError):
+            return Response({"error": "Invalid withdrawal amount"}, status=status.HTTP_400_BAD_REQUEST)
 
-            if not gateway or not amount or not wallet_address:
-                return Response({'error': 'Valid gateway, amount, and wallet address are required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if amount <= 0:
+            return Response({"error": "Amount must be greater than zero"}, status=status.HTTP_400_BAD_REQUEST)
 
-            with transaction.atomic():
-                user_profile = request.user  # or request.user.profile depending on your user setup
-                if float(request.user.balance) < amount:
-                    return Response({'error': 'Insufficient balance for this withdrawal.'}, status=status.HTTP_400_BAD_REQUEST)
-                
-                # Deduct balance immediately upon request (held in escrow)
-                request.user.balance -= amount
-                request.user.save()
+        user_balance = float(getattr(request.user, 'balance', 0))
+        if user_balance < amount:
+            return Response({"error": "Insufficient account balance"}, status=status.HTTP_400_BAD_REQUEST)
 
-                withdrawal = Withdrawal.objects.create(
-                    user=request.user,
-                    gateway=gateway,
-                    amount=amount,
-                    wallet_address=wallet_address,
-                    status='PENDING'
-                )
+        # MUST CREATE WithdrawalRequest ENTRY FOR ADMIN DASHBOARD
+        withdrawal = WithdrawalRequest.objects.create(
+            user=request.user,
+            amount=amount,
+            method=method,
+            status='PENDING' # Upper case PENDING
+        )
 
-                Transaction.objects.create(
-                    user=request.user,
-                    transaction_type='WITHDRAWAL',
-                    amount=amount,
-                    status='PENDING'
-                )
+        # ALSO CREATE Transaction RECORD FOR USER DASHBOARD
+        Transaction.objects.create(
+            user=request.user,
+            transaction_type='WITHDRAWAL',
+            amount=amount,
+            payment_method=method,
+            status='PENDING'
+        )
 
-            # --- ADD WITHDRAWAL ALERT HERE ---
-            send_admin_alert(
-                title="🚨 New Withdrawal Request",
-                message=f"User: {request.user.username}\nAmount: ${amount:,.2f}\nGateway: {gateway}\nWallet Address: {wallet_address}",
-                priority="urgent",
-                tags="bank"
-            )
-
-            return Response({
-                'success': True, 
-                'message': 'Withdrawal request submitted successfully!'
-            }, status=status.HTTP_201_CREATED)
-
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            "success": True, 
+            "message": f"Withdrawal request of ${amount:.2f} submitted successfully!",
+            "id": withdrawal.id
+        })
 
 
 
@@ -465,7 +453,21 @@ class UserWithdrawalsView(APIView):
                     wallet_address=wallet_address,
                     status='PENDING'
                 )
-                return Response({"success": True, "message": "Withdrawal request submitted successfully!"}, status=status.HTTP_201_CREATED)
+
+            # Trigger instant push & email alert for withdrawal
+            send_admin_alert(
+                title="🚨 New Withdrawal Request",
+                message=f"User: {user.username}\nAmount: ${amount:,.2f}\nGateway: {gateway}\nWallet: {wallet_address}\nRequest ID: #{withdrawal.id}",
+                priority="urgent",
+                tags="bank"
+            )
+
+            return Response({
+                "success": True, 
+                "message": "Withdrawal request submitted successfully!",
+                "id": withdrawal.id
+            }, status=status.HTTP_201_CREATED)
+
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
