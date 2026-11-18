@@ -14,7 +14,7 @@ from .admin_views import (
     AdminAnalyticsView,
     AdminDepositsView,
     AdminWithdrawalsView,
-    AdminWithdrawalDetailView
+    AdminWithdrawalDetailView,
 )
 from .views import (
     InvestmentPlanListView,
@@ -26,62 +26,43 @@ from .views import (
     UserTransactionListView,
     UserWithdrawalsView,
 )
-urlpatterns = [
 
+urlpatterns = [
     # User routes
+    path('user/profile/', UserDashboardStatsView.as_view(), name='user-profile'),
     path('user/deposits/', UserDepositsView.as_view()),
     path('user/withdrawals/', UserWithdrawalsView.as_view()),
+
     # User-facing endpoints
     path('plans/', InvestmentPlanListView.as_view(), name='investment-plans'),
     path('deposit/', UserDepositCreateView.as_view(), name='user-deposit'),
     path('withdraw/', UserWithdrawalCreateView.as_view(), name='user-withdraw'),
     path('transactions/', UserTransactionListView.as_view(), name='user-transactions'),
+    path('invest/', UserInvestPlanView.as_view(), name='user-invest'),
 
+    # Admin analytics & plans
     path('admin/analytics/', AdminAnalyticsView.as_view()),
-
     path('admin/investment-plans/', AdminInvestmentPlanListView.as_view()),
     path('admin/investment-plans/<int:pk>/', AdminInvestmentPlanDetailView.as_view()),
     path('admin/expiring-deposits/', AdminExpiringDepositsView.as_view()),
 
+    # Admin processings
+    path('admin/processings/', AdminProcessingsView.as_view(), name='admin-processings'),
+    path('admin/processings/<int:pk>/', AdminProcessingsView.as_view(), name='admin-processing-detail'),
 
-
-
-    
-    
-
-
-    path('admin/processings/', AdminProcessingsView.as_view()),
-    path('admin/processings/<int:pk>/', AdminProcessingsView.as_view()),
-
-
-    # Deposits
+    # Admin deposits
     path('admin/deposits/', AdminDepositsView.as_view()),
     path('admin/deposits/<int:pk>/action/', AdminDepositsView.as_view()),
 
-    # Admin endpoints
+    # Admin users & balances
     path('admin/users/', AdminUserListView.as_view(), name='admin-user-list'),
     path('admin/users/<int:pk>/', AdminUserDetailView.as_view(), name='admin-user-detail'),
     path('admin/credit-user/', AdminCreditUserBalanceView.as_view(), name='admin-credit-user'),
     path('admin/transactions/', AdminTransactionListView.as_view(), name='admin-transactions'),
-    path('admin/withdrawals/pending/', AdminWithdrawalListView.as_view(), name='admin-withdrawals'),
-    path('admin/withdrawals/<int:pk>/process/', AdminProcessWithdrawalView.as_view(), name='admin-process-withdrawal'),
-    path('admin/settings/', AdminSystemSettingsView.as_view(), name='admin-system-settings'),
 
-    path('admin/processings/', AdminProcessingsView.as_view(), name='admin-processings'),
-    path('admin/processings/<int:pk>/', AdminProcessingsView.as_view(), name='admin-processing-detail'),
-
-
-    # ... your existing routes ...
+    # Admin withdrawals & settings
     path('admin/withdrawals/pending/', AdminWithdrawalListView.as_view(), name='admin-withdrawals'),
     path('admin/withdrawals/<int:pk>/', AdminWithdrawalDetailView.as_view(), name='admin-withdrawal-detail'),
     path('admin/withdrawals/<int:pk>/process/', AdminProcessWithdrawalView.as_view(), name='admin-process-withdrawal'),
-
-
-    # User routes
-    path('user/profile/', UserDashboardStatsView.as_view(), name='user-profile'), # <-- ADD THIS LINE
-    path('user/deposits/', UserDepositsView.as_view()),
-    path('user/withdrawals/', UserWithdrawalsView.as_view()),
-    # ... rest of your URLs
-
-    path('invest/', UserInvestPlanView.as_view(), name='user-invest'),
+    path('admin/settings/', AdminSystemSettingsView.as_view(), name='admin-system-settings'),
 ]

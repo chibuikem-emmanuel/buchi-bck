@@ -13,6 +13,7 @@ from .models import Deposit, Withdrawal, ActiveInvestment
 from django.db import transaction
 from django.db.models import Q
 from django.db.models import Sum, Count
+from django.db.models.deletion import ProtectedError
 # Assuming you have models named InvestmentPlan and UserDeposit/Deposit defined:
 
 from decimal import Decimal
@@ -75,24 +76,69 @@ class AdminUserDetailView(APIView):
     def patch(self, request, pk, format=None):
         return self._update_user(request, pk)
 
+    def delete(self, request, pk, format=None):
+        try:
+            target_user = User.objects.get(pk=pk)
+
+            # Prevent deleting your own admin account or another superuser
+            if target_user == request.user:
+                return Response(
+                    {"success": False, "error": "You cannot delete your own admin account."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if target_user.is_superuser and not request.user.is_superuser:
+                return Response(
+                    {"success": False, "error": "Only a superuser can delete another superuser."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+            username = target_user.username
+            target_user.delete()
+            print(f"SUCCESS: User {pk} ({username}) deleted successfully.")
+            return Response(
+                {"success": True, "message": f"User {username} deleted successfully!"},
+                status=status.HTTP_200_OK,
+            )
+
+        except User.DoesNotExist:
+            return Response(
+                {"success": False, "error": "User not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except ProtectedError:
+            return Response(
+                {
+                    "success": False,
+                    "error": "Cannot delete user because they have protected deposit/withdrawal records. Disable the account instead.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as e:
+            print("USER DELETE ERROR:", str(e))
+            return Response(
+                {"success": False, "error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
     def _update_user(self, request, pk):
         try:
             print("RECEIVED USER UPDATE DATA:", request.data)
             user = User.objects.get(pk=pk)
             data = request.data
-            
+
             # Basic credentials
             if 'username' in data and data['username'] is not None:
                 user.username = data['username']
             if 'email' in data and data['email'] is not None:
                 user.email = data['email']
-                
+
             # Handle full_name conversion to first_name/last_name
             if 'full_name' in data and data['full_name'] is not None:
                 name_parts = str(data['full_name']).strip().split(' ', 1)
                 user.first_name = name_parts[0]
                 user.last_name = name_parts[1] if len(name_parts) > 1 else ''
-            
+
             # Fallback for explicit first/last name
             first_name = data.get('first_name') or data.get('firstName')
             if first_name is not None:
@@ -104,20 +150,20 @@ class AdminUserDetailView(APIView):
             # Handle status -> is_active
             if 'status' in data:
                 status_val = str(data['status']).lower()
-                user.is_active = status_val in ['active', 'true', '1', 'enabled', 'true']
+                user.is_active = status_val in ['active', 'true', '1', 'enabled']
             elif 'is_active' in data:
                 user.is_active = bool(data['is_active'])
 
             # Handle crypto wallets and admin notes (checking on user or related profile)
             target_obj = getattr(user, 'profile', user)
             fields_to_update = [
-                'btc_address', 'usdt_trc20', 'usdt_erc20', 
+                'btc_address', 'usdt_trc20', 'usdt_erc20',
                 'eth_address', 'bnb_address', 'admin_note'
             ]
             for field in fields_to_update:
                 if field in data and hasattr(target_obj, field):
                     setattr(target_obj, field, data[field])
-            
+
             if hasattr(user, 'profile'):
                 user.profile.save()
 
@@ -125,16 +171,25 @@ class AdminUserDetailView(APIView):
             password = data.get('password') or data.get('temp_password')
             if password and str(password).strip() != '':
                 user.set_password(str(password).strip())
-                
+
             user.save()
             print(f"SUCCESS: User {pk} updated successfully.")
-            return Response({"success": True, "message": "User updated successfully!"}, status=status.HTTP_200_OK)
-            
+            return Response(
+                {"success": True, "message": "User updated successfully!"},
+                status=status.HTTP_200_OK,
+            )
+
         except User.DoesNotExist:
-            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "User not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         except Exception as e:
             print("USER UPDATE ERROR:", str(e))
-            return Response({"success": False, "error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"success": False, "error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         
 class AdminCreditUserBalanceView(generics.GenericAPIView):
     permission_classes = [IsAdminUser]
