@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, transaction
 from django.contrib.auth import get_user_model
 from decimal import Decimal
 from django.conf import settings
@@ -182,12 +182,16 @@ class ActiveInvestment(models.Model):
         ('CANCELLED', 'CANCELLED'),
     )
 
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='active_investments')
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='active_investments'
+    )
     plan = models.ForeignKey('InvestmentPlan', on_delete=models.SET_NULL, null=True, blank=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     daily_profit_percentage = models.DecimalField(max_digits=5, decimal_places=2, default='4.00')
     duration_days = models.IntegerField(default=3)
-    start_date = models.DateTimeField(default=timezone.now)  # UTC Timezone-aware timestamp
+    start_date = models.DateTimeField(default=timezone.now)
     end_date = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ACTIVE')
     is_completed = models.BooleanField(default=False)
@@ -196,41 +200,34 @@ class ActiveInvestment(models.Model):
         return f"{self.user.username} - ${self.amount} ({self.status})"
 
     def calculate_accumulated_profit(self):
-        """
-        Calculates progressive earnings based on exact elapsed seconds.
-        Works seamlessly across Nigeria, Asia, and all global regions.
-        """
         if not self.start_date:
             return Decimal('0.00')
-        
-        delta = timezone.now() - self.start_date
-        total_seconds = Decimal(str(delta.total_seconds()))
-        
-        # 86400 seconds = exactly 24 hours (1 day)
-        days_elapsed = min(total_seconds / Decimal('86400'), Decimal(str(self.duration_days)))
-        if days_elapsed < 0:
-            days_elapsed = Decimal('0.00')
+
+        now = timezone.now()
+        if now <= self.start_date:
+            return Decimal('0.00')
+
+        total_seconds = Decimal(str((now - self.start_date).total_seconds()))
+        days_elapsed = min(
+            total_seconds / Decimal('86400'),
+            Decimal(str(max(self.duration_days or 0, 0)))
+        )
 
         daily_profit = self.amount * (self.daily_profit_percentage / Decimal('100.00'))
         return (daily_profit * days_elapsed).quantize(Decimal('0.01'))
 
     def check_and_update_expiry(self):
-        """
-        Releases principal back to balance strictly when absolute expiry time is reached.
-        Uses atomic select_for_update to guarantee safety.
-        """
-        if self.status == 'ACTIVE' and not self.is_completed:
-            if self.end_date and timezone.now() >= self.end_date:
+        if self.status == 'ACTIVE' and not self.is_completed and self.end_date:
+            if timezone.now() >= self.end_date:
                 with transaction.atomic():
                     inv = ActiveInvestment.objects.select_for_update().get(pk=self.pk)
-                    if inv.status == 'ACTIVE' and not inv.is_completed:
+                    if inv.status == 'ACTIVE' and not inv.is_completed and inv.end_date and timezone.now() >= inv.end_date:
                         inv.status = 'COMPLETED'
                         inv.is_completed = True
-                        inv.save()
+                        inv.save(update_fields=['status', 'is_completed'])
 
-                        # Release principal strictly upon expiration
-                        inv.user.balance += inv.amount
-                        inv.user.save()
+                        inv.user.balance = (inv.user.balance or Decimal('0.00')) + inv.amount
+                        inv.user.save(update_fields=['balance'])
 
                         Transaction.objects.create(
                             user=inv.user,
@@ -241,9 +238,10 @@ class ActiveInvestment(models.Model):
                         )
 
     def save(self, *args, **kwargs):
-        if not self.end_date:
-            base_date = self.start_date or timezone.now()
-            self.end_date = base_date + timedelta(days=self.duration_days)
+        if not self.start_date:
+            self.start_date = timezone.now()
+        days = int(self.duration_days if self.duration_days is not None else 3)
+        self.end_date = self.start_date + timedelta(days=days)
         super().save(*args, **kwargs)
 
 

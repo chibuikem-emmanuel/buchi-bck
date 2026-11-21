@@ -897,58 +897,44 @@ class AdminWithdrawalDetailView(generics.RetrieveAPIView):
 #     serializer_class = DepositRequestSerializer
 
 
-class AdminExpiringDepositsView(generics.GenericAPIView):
+class AdminExpiringDepositsView(APIView):
     permission_classes = [permissions.IsAdminUser]
-    queryset = ActiveInvestment.objects.select_related('user', 'plan').filter(status='ACTIVE')
 
-    def get(self, request, *args, **kwargs):
-        active_investments = self.get_queryset()
-        
-        expiring = [{
+    def get(self, request, format=None):
+        now = timezone.now()
+        expiring_window = now + timedelta(hours=24)
+
+        overdue_qs = ActiveInvestment.objects.select_related('user', 'plan').filter(
+            status='ACTIVE',
+            is_completed=False,
+            end_date__isnull=False,
+            end_date__lte=now,
+        )
+        for inv in overdue_qs:
+            inv.check_and_update_expiry()
+
+        expiring_qs = (
+            ActiveInvestment.objects.select_related('user', 'plan')
+            .filter(
+                status='ACTIVE',
+                is_completed=False,
+                end_date__isnull=False,
+                end_date__gt=now,
+                end_date__lte=expiring_window,
+            )
+            .order_by('end_date')
+        )
+
+        data = [{
             "id": inv.id,
             "username": inv.user.username if inv.user else "Unknown",
-            "plan_name": inv.plan.name if inv.plan else "Custom Plan",
+            "plan_name": inv.plan.name if inv.plan else "Investment Plan",
             "amount": str(inv.amount),
-            "expires_at": inv.end_date.strftime('%b-%d-%Y %I:%M:%S %p') if inv.end_date else "N/A"
-        } for inv in active_investments]
-        
-        return Response(expiring, status=status.HTTP_200_OK)
+            "duration_days": inv.duration_days,
+            "start_date": inv.start_date.strftime('%Y-%m-%d %H:%M') if inv.start_date else None,
+            "expires_at": inv.end_date.strftime('%b-%d-%Y %I:%M:%S %p') if inv.end_date else None,
+            "status": inv.status,
+        } for inv in expiring_qs]
 
-    def post(self, request, *args, **kwargs):
-        investment_id = request.data.get('investment_id') or request.data.get('id')
-
-        if not investment_id:
-            return Response({"error": "investment_id is required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            with transaction.atomic():
-                inv = ActiveInvestment.objects.select_for_update().get(pk=investment_id)
-
-                if inv.status != 'ACTIVE' or inv.is_completed:
-                    return Response({"error": "This investment is already completed or inactive."}, status=status.HTTP_400_BAD_REQUEST)
-
-                inv.status = 'COMPLETED'
-                inv.is_completed = True
-                inv.save()
-
-                inv.user.balance += inv.amount
-                inv.user.save()
-
-                Transaction.objects.create(
-                    user=inv.user,
-                    transaction_type='PRINCIPAL_RELEASE',
-                    amount=inv.amount,
-                    status='APPROVED',
-                    transaction_id=f"ADMIN-REL-{inv.id}-{timezone.now().strftime('%Y%m%d%H%M%S')}"
-                )
-
-                return Response({
-                    "success": True, 
-                    "message": f"Successfully released ${inv.amount} principal back to {inv.user.username}'s balance!"
-                }, status=status.HTTP_200_OK)
-
-        except ActiveInvestment.DoesNotExist:
-            return Response({"error": "Active investment record not found."}, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(data, status=status.HTTP_200_OK)
 

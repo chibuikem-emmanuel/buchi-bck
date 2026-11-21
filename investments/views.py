@@ -593,103 +593,123 @@ class UserInvestPlanView(generics.GenericAPIView):
         try:
             plan_id = request.data.get('plan_id')
             amount = Decimal(str(request.data.get('amount', 0)))
-            payment_method = request.data.get('payment_method', '').strip()
+            payment_method = str(request.data.get('payment_method', '')).strip()
 
             if amount <= 0:
                 return Response({'error': 'Invalid investment amount.'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # 1. Fetch Plan & Validate Min/Max Bounds
             plan = InvestmentPlan.objects.filter(id=plan_id).first()
             if not plan:
                 return Response({'error': 'Investment plan not found.'}, status=status.HTTP_404_NOT_FOUND)
 
             if amount < plan.min_deposit:
-                return Response({'error': f'Amount is below the minimum deposit of ${plan.min_deposit} for this plan.'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {'error': f'Amount is below the minimum deposit of ${plan.min_deposit} for this plan.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             if plan.max_deposit and amount > plan.max_deposit:
-                return Response({'error': f'Amount exceeds the maximum deposit of ${plan.max_deposit} for this plan.'}, status=status.HTTP_400_BAD_REQUEST)
-
-            # 2. Handle Payment Method Rules
-            is_from_balance = (payment_method == 'Account Balance')
-
-            if is_from_balance:
-                # --- ACCOUNT BALANCE FLOW (Instant Activation) ---
-                if request.user.balance < amount:
-                    return Response({'error': 'Insufficient account balance for this reinvestment.'}, status=status.HTTP_400_BAD_REQUEST)
-                
-                # Deduct balance immediately
-                request.user.balance -= amount
-                request.user.save()
-
-                # Activate investment instantly
-                active_investment = ActiveInvestment.objects.create(
-                    user=request.user,
-                    plan=plan,
-                    amount=amount,
-                    daily_profit_percentage=getattr(plan, 'daily_profit_percentage', 4.00),
-                    duration_days=getattr(plan, 'duration_days', 3),
-                    status='ACTIVE'
+                return Response(
+                    {'error': f'Amount exceeds the maximum deposit of ${plan.max_deposit} for this plan.'},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
-                # Log transaction as APPROVED
-                Transaction.objects.create(
-                    user=request.user,
-                    transaction_type='REINVESTMENT',
-                    amount=amount,
-                    status='APPROVED'
-                )
+            if payment_method == 'Account Balance':
+                with transaction.atomic():
+                    user = User.objects.select_for_update().get(pk=request.user.pk)
+                    current_balance = Decimal(str(getattr(user, 'balance', 0)))
 
-                # Trigger alert for balance reinvestment
+                    if current_balance < amount:
+                        return Response(
+                            {'error': 'Insufficient account balance for this reinvestment.'},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+
+                    user.balance = current_balance - amount
+                    user.save(update_fields=['balance'])
+
+                    active_investment = ActiveInvestment.objects.create(
+                        user=user,
+                        plan=plan,
+                        amount=amount,
+                        daily_profit_percentage=plan.daily_profit,
+                        duration_days=plan.duration_days,
+                        status='ACTIVE',
+                    )
+
+                    Transaction.objects.create(
+                        user=user,
+                        transaction_type='REINVESTMENT',
+                        amount=amount,
+                        payment_method='Account Balance',
+                        status='APPROVED',
+                    )
+
                 send_admin_alert(
                     title="⚡ Plan Reinvested (Balance)",
-                    message=f"User: {request.user.username}\nPlan: {plan.name}\nAmount: ${amount:,.2f}\nMethod: Account Balance",
+                    message=(
+                        f"User: {request.user.username}\n"
+                        f"Plan: {plan.name}\n"
+                        f"Amount: ${amount:,.2f}\n"
+                        f"Method: Account Balance"
+                    ),
                     priority="default",
-                    tags="zap"
+                    tags="zap",
                 )
 
-                return Response({
-                    'success': True,
-                    'message': 'Plan activated successfully!',
-                    'active_investment_id': active_investment.id,
-                    'new_balance': str(request.user.balance)
-                }, status=status.HTTP_201_CREATED)
-
-            else:
-                # --- CRYPTO GATEWAY FLOW (Awaits Admin Approval) ---
-                # Generate a unique transaction reference ID for the crypto deposit
-                unique_tx_id = f"TX-{uuid.uuid4().hex[:10].upper()}"
-
-                # Create a PENDING Deposit linked to the plan
-                Deposit.objects.create(
-                    user=request.user,
-                    plan=plan,
-                    gateway=payment_method or 'Crypto Deposit',
-                    amount=amount,
-                    transaction_id=unique_tx_id,
-                    status='PENDING'
+                return Response(
+                    {
+                        'success': True,
+                        'message': 'Plan activated successfully!',
+                        'active_investment_id': active_investment.id,
+                        'new_balance': str(user.balance),
+                    },
+                    status=status.HTTP_201_CREATED,
                 )
 
-                # Log pending transaction
-                Transaction.objects.create(
-                    user=request.user,
-                    transaction_type='INVESTMENT',
-                    amount=amount,
-                    status='PENDING'
-                )
+            unique_tx_id = f"TX-{uuid.uuid4().hex[:10].upper()}"
+            gateway = payment_method or 'Crypto Deposit'
 
-                # Trigger instant push & email alert for crypto deposit
-                send_admin_alert(
-                    title="💰 New Deposit / Investment Order",
-                    message=f"User: {request.user.username}\nPlan: {plan.name}\nAmount: ${amount:,.2f}\nGateway: {payment_method or 'Crypto Deposit'}\nReference: {unique_tx_id}",
-                    priority="urgent",
-                    tags="moneybag"
-                )
+            Deposit.objects.create(
+                user=request.user,
+                plan=plan,
+                gateway=gateway,
+                amount=amount,
+                transaction_id=unique_tx_id,
+                status='PENDING',
+            )
 
-                return Response({
+            Transaction.objects.create(
+                user=request.user,
+                transaction_type='INVESTMENT',
+                amount=amount,
+                payment_method=gateway,
+                transaction_id=unique_tx_id,
+                status='PENDING',
+            )
+
+            send_admin_alert(
+                title="💰 New Deposit / Investment Order",
+                message=(
+                    f"User: {request.user.username}\n"
+                    f"Plan: {plan.name}\n"
+                    f"Amount: ${amount:,.2f}\n"
+                    f"Gateway: {gateway}\n"
+                    f"Reference: {unique_tx_id}"
+                ),
+                priority="urgent",
+                tags="moneybag",
+            )
+
+            return Response(
+                {
                     'success': True,
                     'message': 'Investment order initialized. Please complete your deposit.',
-                    'pending': True
-                }, status=status.HTTP_201_CREATED)
+                    'transaction_id': unique_tx_id,
+                    'pending': True,
+                },
+                status=status.HTTP_201_CREATED,
+            )
 
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
