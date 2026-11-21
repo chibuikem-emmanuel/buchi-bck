@@ -383,7 +383,7 @@ class UserDepositsView(APIView):
 
     def get(self, request, *args, **kwargs):
         # Fetch only the logged-in user's deposits
-        deposits = Deposit.objects.filter(user=request.user)
+        deposits = Deposit.objects.filter(user=request.user).order_by('-created_at')
         data = [{
             "id": d.id,
             "gateway": d.gateway,
@@ -398,19 +398,58 @@ class UserDepositsView(APIView):
         gateway = request.data.get('gateway')
         amount = request.data.get('amount')
         transaction_id = request.data.get('transaction_id')
+        plan_id = request.data.get('plan_id')
 
         if not gateway or not amount or not transaction_id:
             return Response({"error": "All fields (gateway, amount, transaction_id) are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            deposit = Deposit.objects.create(
-                user=request.user,
-                gateway=gateway,
-                amount=amount,
-                transaction_id=transaction_id,
-                status='PENDING'
-            )
-            return Response({"success": True, "message": "Deposit submitted successfully! Waiting for admin approval."}, status=status.HTTP_201_CREATED)
+            parsed_amount = Decimal(str(amount))
+            if parsed_amount <= 0:
+                return Response({"error": "Amount must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
+
+            plan = InvestmentPlan.objects.filter(pk=plan_id).first() if plan_id else None
+
+            with transaction.atomic():
+                deposit = Deposit.objects.create(
+                    user=request.user,
+                    plan=plan,
+                    gateway=gateway,
+                    amount=parsed_amount,
+                    transaction_id=transaction_id,
+                    status='PENDING'
+                )
+
+                Transaction.objects.create(
+                    user=request.user,
+                    transaction_type='INVESTMENT' if plan else 'DEPOSIT',
+                    amount=parsed_amount,
+                    payment_method=gateway,
+                    transaction_id=transaction_id,
+                    status='PENDING'
+                )
+
+            try:
+                send_admin_alert(
+                    title="💰 New Deposit Submitted",
+                    message=(
+                        f"User: {request.user.username}\n"
+                        f"Plan: {plan.name if plan else 'Direct Balance Deposit'}\n"
+                        f"Amount: ${parsed_amount:,.2f}\n"
+                        f"Gateway: {gateway}\n"
+                        f"Reference: {transaction_id}"
+                    ),
+                    priority="urgent",
+                    tags="moneybag"
+                )
+            except Exception as alert_err:
+                print(f"ADMIN ALERT ERROR: {alert_err}")
+
+            return Response({
+                "success": True,
+                "message": "Deposit submitted successfully! Waiting for admin approval.",
+                "deposit_id": deposit.id
+            }, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         
