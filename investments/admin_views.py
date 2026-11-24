@@ -283,11 +283,44 @@ class AdminProcessWithdrawalView(generics.GenericAPIView):
 
             # Sync matching transaction log status
             Transaction.objects.filter(
-                user=user, 
-                transaction_type='WITHDRAWAL', 
-                amount=withdrawal.amount, 
+                user=user,
+                transaction_type='WITHDRAWAL',
+                amount=withdrawal.amount,
                 status='PENDING'
             ).update(status=withdrawal.status)
+
+            if user and user.email:
+                amt_display = f"{Decimal(str(withdrawal.amount)):,.2f}"
+                method_display = getattr(withdrawal, 'method', 'USDT TRC20')
+
+                if action == 'approve':
+                    send_user_email(
+                        to_email=user.email,
+                        subject=f"Withdrawal Confirmed (#{withdrawal.id})",
+                        message=(
+                            f"Hi {user.username},\n\n"
+                            f"Your withdrawal has been confirmed and approved:\n"
+                            f"- Request ID: #{withdrawal.id}\n"
+                            f"- Amount: ${amt_display}\n"
+                            f"- Method: {method_display}\n"
+                            f"- Status: APPROVED\n\n"
+                            f"Thank you for using Grove Assets."
+                        ),
+                    )
+                elif action == 'reject':
+                    send_user_email(
+                        to_email=user.email,
+                        subject=f"Withdrawal Update (#{withdrawal.id})",
+                        message=(
+                            f"Hi {user.username},\n\n"
+                            f"Your withdrawal request was not approved:\n"
+                            f"- Request ID: #{withdrawal.id}\n"
+                            f"- Amount: ${amt_display}\n"
+                            f"- Method: {method_display}\n"
+                            f"- Status: REJECTED\n\n"
+                            f"Please contact support if you need assistance."
+                        ),
+                    )
 
             return Response({'success': True, 'message': f'Withdrawal successfully {action}d'})
         except WithdrawalRequest.DoesNotExist:
@@ -675,12 +708,12 @@ class AdminDepositsView(generics.GenericAPIView):
     def get(self, request, *args, **kwargs):
         user_id = request.query_params.get('user_id')
         status_param = request.query_params.get('status')
-        
+
         deposits = self.get_queryset()
-        
+
         if user_id:
             deposits = deposits.filter(user_id=user_id)
-            
+
         if status_param:
             deposits = deposits.filter(status__iexact=status_param.strip())
 
@@ -707,7 +740,7 @@ class AdminDepositsView(generics.GenericAPIView):
         try:
             with transaction.atomic():
                 dep = Deposit.objects.select_for_update().get(pk=deposit_id)
-                
+
                 if dep.status == 'APPROVED':
                     return Response({"success": True, "message": f"Deposit #{dep.id} was already approved."})
                 if dep.status == 'REJECTED':
@@ -716,7 +749,7 @@ class AdminDepositsView(generics.GenericAPIView):
                 if action == 'approve':
                     dep.status = 'APPROVED'
                     dep.save()
-                    
+
                     if dep.plan is not None:
                         # RULE: Plan deposit -> Locks principal in ActiveInvestment. Balance is NOT touched.
                         ActiveInvestment.objects.create(
@@ -727,7 +760,7 @@ class AdminDepositsView(generics.GenericAPIView):
                             duration_days=dep.plan.duration_days,
                             status='ACTIVE'
                         )
-                        
+
                         Transaction.objects.create(
                             user=dep.user,
                             transaction_type='INVESTMENT',
@@ -737,8 +770,8 @@ class AdminDepositsView(generics.GenericAPIView):
                         )
                     else:
                         # RULE: General deposit (no plan) -> Credits balance directly.
-                        dep.user.balance += dep.amount
-                        dep.user.save()
+                        dep.user.balance = Decimal(str(dep.user.balance or 0)) + Decimal(str(dep.amount))
+                        dep.user.save(update_fields=['balance'])
 
                         Transaction.objects.create(
                             user=dep.user,
@@ -748,17 +781,60 @@ class AdminDepositsView(generics.GenericAPIView):
                             transaction_id=f"DEP-{dep.transaction_id or dep.id}"
                         )
 
-                    return Response({"success": True, "message": f"Deposit #{dep.id} approved successfully!"})
-
                 elif action == 'reject':
                     dep.status = 'REJECTED'
                     dep.save()
                     if dep.transaction_id:
                         Transaction.objects.filter(transaction_id=dep.transaction_id).update(status='REJECTED')
-                    return Response({"success": True, "message": f"Deposit #{dep.id} has been rejected."})
 
-                return Response({"error": "Invalid action parameter."}, status=status.HTTP_400_BAD_REQUEST)
-                
+                else:
+                    return Response({"error": "Invalid action parameter."}, status=status.HTTP_400_BAD_REQUEST)
+
+            user_email = dep.user.email if dep.user else ''
+            username = dep.user.username if dep.user else 'Investor'
+            amt_display = f"{Decimal(str(dep.amount)):,.2f}"
+            tx_ref = dep.transaction_id or f"DEP-{dep.id}"
+
+            if user_email:
+                if action == 'approve':
+                    destination_line = (
+                        f"- Plan: {dep.plan.name}\n"
+                        if dep.plan is not None
+                        else "- Credited to: Account Balance\n"
+                    )
+                    send_user_email(
+                        to_email=user_email,
+                        subject=f"Deposit Confirmed - {tx_ref}",
+                        message=(
+                            f"Hi {username},\n\n"
+                            f"Your deposit has been confirmed and approved:\n"
+                            f"- Amount: ${amt_display}\n"
+                            f"- Gateway: {dep.gateway}\n"
+                            f"{destination_line}"
+                            f"- Reference: {tx_ref}\n"
+                            f"- Status: APPROVED\n\n"
+                            f"You can now view your updated account on your dashboard."
+                        ),
+                    )
+                elif action == 'reject':
+                    send_user_email(
+                        to_email=user_email,
+                        subject=f"Deposit Update - {tx_ref}",
+                        message=(
+                            f"Hi {username},\n\n"
+                            f"Your deposit submission could not be confirmed:\n"
+                            f"- Amount: ${amt_display}\n"
+                            f"- Gateway: {dep.gateway}\n"
+                            f"- Reference: {tx_ref}\n"
+                            f"- Status: REJECTED\n\n"
+                            f"Please contact support if you need assistance."
+                        ),
+                    )
+
+            if action == 'approve':
+                return Response({"success": True, "message": f"Deposit #{dep.id} approved successfully!"})
+            return Response({"success": True, "message": f"Deposit #{dep.id} has been rejected."})
+
         except Deposit.DoesNotExist:
             return Response({"error": "Deposit record not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
@@ -853,29 +929,71 @@ class RegisterView(APIView):
 
 
 class AdminProcessDepositView(generics.GenericAPIView):
-    permission_classes = [permissions.IsAuthenticated] # Add IsAdminUser if required
+    permission_classes = [permissions.IsAuthenticated]  # Add IsAdminUser if required
 
     def post(self, request, *args, **kwargs):
         deposit_id = request.data.get('deposit_id') or request.data.get('id')
-        action = request.data.get('action') # 'approve' or 'reject'
+        action = request.data.get('action')  # 'approve' or 'reject'
 
         try:
             with transaction.atomic():
                 dep = Deposit.objects.select_for_update().get(pk=deposit_id)
                 if dep.status != 'PENDING':
-                    return Response({"error": f"Deposit is already {dep.status.lower()}."}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response(
+                        {"error": f"Deposit is already {dep.status.lower()}."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
                 if action == 'approve':
                     dep.status = 'APPROVED'
                     dep.save()  # Triggers Deposit.save() routing automatically!
-                    return Response({"success": True, "message": f"Deposit #{dep.id} approved successfully."})
-                
                 elif action == 'reject':
                     dep.status = 'REJECTED'
                     dep.save()
-                    return Response({"success": True, "message": f"Deposit #{dep.id} has been rejected."})
-                
-                return Response({"error": "Invalid action parameter."}, status=status.HTTP_400_BAD_REQUEST)
+                else:
+                    return Response({"error": "Invalid action parameter."}, status=status.HTTP_400_BAD_REQUEST)
+
+            user_email = dep.user.email if dep.user else ''
+            username = dep.user.username if dep.user else 'Investor'
+            amt_display = f"{Decimal(str(dep.amount)):,.2f}"
+            tx_ref = dep.transaction_id or f"DEP-{dep.id}"
+            plan_line = f"- Plan: {dep.plan.name}\n" if getattr(dep, 'plan', None) else ""
+
+            if user_email:
+                if action == 'approve':
+                    send_user_email(
+                        to_email=user_email,
+                        subject=f"Deposit Confirmed - {tx_ref}",
+                        message=(
+                            f"Hi {username},\n\n"
+                            f"Your deposit has been confirmed and approved:\n"
+                            f"- Amount: ${amt_display}\n"
+                            f"- Gateway: {dep.gateway}\n"
+                            f"{plan_line}"
+                            f"- Reference: {tx_ref}\n"
+                            f"- Status: APPROVED\n\n"
+                            f"You can now view your updated account on your dashboard."
+                        ),
+                    )
+                elif action == 'reject':
+                    send_user_email(
+                        to_email=user_email,
+                        subject=f"Deposit Update - {tx_ref}",
+                        message=(
+                            f"Hi {username},\n\n"
+                            f"Your deposit submission could not be confirmed:\n"
+                            f"- Amount: ${amt_display}\n"
+                            f"- Gateway: {dep.gateway}\n"
+                            f"{plan_line}"
+                            f"- Reference: {tx_ref}\n"
+                            f"- Status: REJECTED\n\n"
+                            f"Please contact support if you need assistance."
+                        ),
+                    )
+
+            if action == 'approve':
+                return Response({"success": True, "message": f"Deposit #{dep.id} approved successfully."})
+            return Response({"success": True, "message": f"Deposit #{dep.id} has been rejected."})
 
         except Deposit.DoesNotExist:
             return Response({"error": "Deposit record not found."}, status=status.HTTP_404_NOT_FOUND)
