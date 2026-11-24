@@ -15,6 +15,7 @@ from django.db.models import Q
 from django.db.models import Sum, Count
 from django.db.models.deletion import ProtectedError
 # Assuming you have models named InvestmentPlan and UserDeposit/Deposit defined:
+from crystals_core.notifications import send_user_email
 
 from decimal import Decimal
 
