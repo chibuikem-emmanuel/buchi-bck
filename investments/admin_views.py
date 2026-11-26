@@ -1045,11 +1045,9 @@ class AdminExpiringDepositsView(APIView):
         expiring_qs = (
             ActiveInvestment.objects.select_related('user', 'plan')
             .filter(
-                status='ACTIVE',
-                is_completed=False,
                 end_date__isnull=False,
-                end_date__gt=now,
                 end_date__lte=expiring_window,
+                status__in=['ACTIVE', 'COMPLETED'],
             )
             .order_by('end_date')
         )
@@ -1063,7 +1061,21 @@ class AdminExpiringDepositsView(APIView):
             "start_date": inv.start_date.strftime('%Y-%m-%d %H:%M') if inv.start_date else None,
             "expires_at": inv.end_date.strftime('%b-%d-%Y %I:%M:%S %p') if inv.end_date else None,
             "status": inv.status,
+            "is_expired": bool(inv.end_date and now >= inv.end_date),
         } for inv in expiring_qs]
 
         return Response(data, status=status.HTTP_200_OK)
 
+
+class AdminReleaseInvestmentView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request, pk, *args, **kwargs):
+        inv = ActiveInvestment.objects.filter(pk=pk).first()
+        if not inv:
+            return Response({"error": "Investment not found."}, status=status.HTTP_404_NOT_FOUND)
+        if inv.end_date and timezone.now() < inv.end_date:
+            return Response({"error": "Investment has not reached expiration time yet."}, status=status.HTTP_400_BAD_REQUEST)
+
+        inv.check_and_update_expiry()
+        return Response({"success": True, "status": inv.status}, status=status.HTTP_200_OK)

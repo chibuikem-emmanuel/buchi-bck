@@ -515,7 +515,7 @@ class UserDashboardStatsView(APIView):
             approved_deposits = Deposit.objects.filter(user=user, status='APPROVED')
             total_deposit = approved_deposits.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
 
-            all_investments = ActiveInvestment.objects.filter(user=user)
+            all_investments = ActiveInvestment.objects.select_related('plan').filter(user=user).order_by('-start_date')
             for inv in all_investments:
                 inv.check_and_update_expiry()
 
@@ -523,8 +523,24 @@ class UserDashboardStatsView(APIView):
             active_investment_total = active_investments_qs.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
 
             total_earned = Decimal('0.00')
+            now = timezone.now()
+            investments_data = []
+
             for inv in all_investments:
                 total_earned += inv.calculate_accumulated_profit() or Decimal('0.00')
+                is_expired = inv.status != 'ACTIVE' or bool(inv.end_date and now >= inv.end_date)
+                investments_data.append({
+                    "id": inv.id,
+                    "plan_name": inv.plan.name if inv.plan else "Investment Plan",
+                    "amount": float(inv.amount),
+                    "daily_profit_percentage": float(inv.daily_profit_percentage),
+                    "duration_days": inv.duration_days,
+                    "start_date": inv.start_date.isoformat() if inv.start_date else None,
+                    "expires_at": inv.end_date.isoformat() if inv.end_date else None,
+                    "expires_at_display": inv.end_date.strftime('%b-%d-%Y %I:%M:%S %p') if inv.end_date else None,
+                    "status": inv.status,
+                    "is_expired": is_expired,
+                })
 
             approved_withdrawals = Withdrawal.objects.filter(user=user, status='APPROVED')
             withdrew_total = approved_withdrawals.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
@@ -544,6 +560,7 @@ class UserDashboardStatsView(APIView):
                     "withdrew_total": float(withdrew_total),
                     "balance": float(max(Decimal('0.00'), balance)),
                     "ref_bonus": float(getattr(user, 'referral_bonus_earned', 0.00) or 0.00),
+                    "investments": investments_data,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -693,28 +710,3 @@ class UserInvestPlanView(generics.GenericAPIView):
 
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-
-from rest_framework import permissions, status
-from rest_framework.response import Response
-from rest_framework.views import APIView
-from .models import ProcessingGateway
-
-class UserProcessingsListView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request, *args, **kwargs):
-        gateways = ProcessingGateway.objects.filter(status='ON').order_by('id')
-        data = [{
-            "id": g.id,
-            "name": g.name,
-            "code": g.code,
-            "status": g.status,
-            "wallet_address": g.wallet_address or "",
-            "instructions": g.instructions or "",
-            "min_deposit": str(g.min_deposit),
-            "max_deposit": str(g.max_deposit),
-            "min_withdraw": str(g.min_withdraw),
-            "max_withdraw": str(g.max_withdraw),
-        } for g in gateways]
-        return Response(data, status=status.HTTP_200_OK)

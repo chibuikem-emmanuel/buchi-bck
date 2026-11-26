@@ -205,10 +205,11 @@ class ActiveInvestment(models.Model):
             return Decimal('0.00')
 
         now = timezone.now()
-        if now <= self.start_date:
+        effective_end = min(now, self.end_date) if self.end_date else now
+        if effective_end <= self.start_date:
             return Decimal('0.00')
 
-        total_seconds = Decimal(str((now - self.start_date).total_seconds()))
+        total_seconds = Decimal(str((effective_end - self.start_date).total_seconds()))
         days_elapsed = min(
             total_seconds / Decimal('86400'),
             Decimal(str(max(self.duration_days or 0, 0)))
@@ -222,7 +223,12 @@ class ActiveInvestment(models.Model):
             if timezone.now() >= self.end_date:
                 with transaction.atomic():
                     inv = ActiveInvestment.objects.select_for_update().get(pk=self.pk)
-                    if inv.status == 'ACTIVE' and not inv.is_completed and inv.end_date and timezone.now() >= inv.end_date:
+                    if (
+                        inv.status == 'ACTIVE'
+                        and not inv.is_completed
+                        and inv.end_date
+                        and timezone.now() >= inv.end_date
+                    ):
                         inv.status = 'COMPLETED'
                         inv.is_completed = True
                         inv.save(update_fields=['status', 'is_completed'])
@@ -237,12 +243,14 @@ class ActiveInvestment(models.Model):
                             status='APPROVED',
                             transaction_id=f"REL-{inv.id}-{timezone.now().strftime('%Y%m%d%H%M%S')}"
                         )
+                        self.refresh_from_db()
 
     def save(self, *args, **kwargs):
         if not self.start_date:
             self.start_date = timezone.now()
-        days = int(self.duration_days if self.duration_days is not None else 3)
-        self.end_date = self.start_date + timedelta(days=days)
+        if not self.end_date:
+            days = int(self.duration_days if self.duration_days is not None else 3)
+            self.end_date = self.start_date + timedelta(days=days)
         super().save(*args, **kwargs)
 
 

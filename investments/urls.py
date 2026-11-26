@@ -71,4 +71,7 @@ urlpatterns = [
     path('plans/', InvestmentPlanListView.as_view(), name='investment-plans'),
     path('processings/', UserProcessingsListView.as_view(), name='user-processings'),
     path('deposit/', UserDepositCreateView.as_view(), name='user-deposit'),
+
+    path('admin/expiring-deposits/', AdminExpiringDepositsView.as_view()),
+    path('admin/expiring-deposits/<int:pk>/release/', AdminReleaseInvestmentView.as_view()),
 ]
