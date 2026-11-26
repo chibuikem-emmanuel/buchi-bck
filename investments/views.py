@@ -8,6 +8,8 @@ from rest_framework import generics, permissions, serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from .models import ProcessingGateway
+from .admin_views import UserProcessingsListView
 
 from accounts.serializers import RegisterSerializer
 from crystals_core.notifications import send_admin_alert, send_user_email
@@ -710,3 +712,27 @@ class UserInvestPlanView(generics.GenericAPIView):
 
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+class UserProcessingsListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        gateways = ProcessingGateway.objects.filter(status='ON').order_by('id')
+        data = [
+            {
+                "id": g.id,
+                "name": g.name,
+                "code": getattr(g, "code", ""),
+                "status": g.status,
+                "wallet_address": getattr(g, "wallet_address", "") or "",
+                "instructions": getattr(g, "instructions", "") or "",
+                "min_deposit": str(getattr(g, "min_deposit", "") or ""),
+                "max_deposit": str(getattr(g, "max_deposit", "") or ""),
+                "min_withdraw": str(getattr(g, "min_withdraw", "") or ""),
+                "max_withdraw": str(getattr(g, "max_withdraw", "") or ""),
+            }
+            for g in gateways
+        ]
+        return Response(data, status=status.HTTP_200_OK)
