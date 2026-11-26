@@ -9,7 +9,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from .models import ProcessingGateway
-from .admin_views import UserProcessingsListView
+
 
 from accounts.serializers import RegisterSerializer
 from crystals_core.notifications import send_admin_alert, send_user_email
