@@ -736,3 +736,17 @@ class UserProcessingsListView(APIView):
             for g in gateways
         ]
         return Response(data, status=status.HTTP_200_OK)
+
+
+class AdminReleaseInvestmentView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request, pk, *args, **kwargs):
+        inv = ActiveInvestment.objects.filter(pk=pk).first()
+        if not inv:
+            return Response({"error": "Investment not found."}, status=status.HTTP_404_NOT_FOUND)
+        if inv.end_date and timezone.now() < inv.end_date:
+            return Response({"error": "Investment has not reached expiration time yet."}, status=status.HTTP_400_BAD_REQUEST)
+
+        inv.check_and_update_expiry()
+        return Response({"success": True, "status": inv.status}, status=status.HTTP_200_OK)

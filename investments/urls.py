@@ -25,7 +25,8 @@ from .views import (
     UserWithdrawalCreateView,
     UserTransactionListView,
     UserWithdrawalsView,
-    UserProcessingsListView
+    UserProcessingsListView,
+    AdminReleaseInvestmentView
 )
 
 urlpatterns = [
