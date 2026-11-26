@@ -693,3 +693,28 @@ class UserInvestPlanView(generics.GenericAPIView):
 
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+from rest_framework import permissions, status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from .models import ProcessingGateway
+
+class UserProcessingsListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        gateways = ProcessingGateway.objects.filter(status='ON').order_by('id')
+        data = [{
+            "id": g.id,
+            "name": g.name,
+            "code": g.code,
+            "status": g.status,
+            "wallet_address": g.wallet_address or "",
+            "instructions": g.instructions or "",
+            "min_deposit": str(g.min_deposit),
+            "max_deposit": str(g.max_deposit),
+            "min_withdraw": str(g.min_withdraw),
+            "max_withdraw": str(g.max_withdraw),
+        } for g in gateways]
+        return Response(data, status=status.HTTP_200_OK)

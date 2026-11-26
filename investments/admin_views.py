@@ -483,17 +483,16 @@ class AdminProcessingsView(APIView):
     permission_classes = [permissions.IsAdminUser]
 
     def get(self, request, *args, **kwargs):
-        # Auto-seed default processors if the table is empty
         if not ProcessingGateway.objects.exists():
             defaults = [
-                {"name": "Bitcoin", "code": "btc", "status": "ON", "instructions": "Transfer Bitcoin to official wallet address.", "min_deposit": "100.00", "max_deposit": "100000.00", "min_withdraw": "10.00", "max_withdraw": "50000.00"},
-                {"name": "USDT TRC20", "code": "usdt_trc20", "status": "ON", "instructions": "Send exact amount in USDT TRC20 network.", "min_deposit": "50.00", "max_deposit": "500000.00", "min_withdraw": "10.00", "max_withdraw": "100000.00"},
-                {"name": "USDT ERC20", "code": "usdt_erc20", "status": "ON", "instructions": "Send USDT via Ethereum ERC20.", "min_deposit": "100.00", "max_deposit": "500000.00", "min_withdraw": "20.00", "max_withdraw": "100000.00"},
-                {"name": "Ethereum", "code": "eth", "status": "ON", "instructions": "Transfer ETH to platform ETH wallet.", "min_deposit": "100.00", "max_deposit": "200000.00", "min_withdraw": "15.00", "max_withdraw": "50000.00"},
-                {"name": "BNB", "code": "bnb", "status": "ON", "instructions": "Transfer BNB (BEP20 network).", "min_deposit": "50.00", "max_deposit": "100000.00", "min_withdraw": "10.00", "max_withdraw": "50000.00"},
-                {"name": "PerfectMoney", "code": "pm", "status": "OFF", "instructions": "Automatic gateway deposit.", "min_deposit": "10.00", "max_deposit": "10000.00", "min_withdraw": "5.00", "max_withdraw": "5000.00"},
-                {"name": "Payeer", "code": "payeer", "status": "OFF", "instructions": "Payeer instant deposit.", "min_deposit": "10.00", "max_deposit": "10000.00", "min_withdraw": "5.00", "max_withdraw": "5000.00"},
-                {"name": "Bank Wire", "code": "wire", "status": "OFF", "instructions": "Bank transfer instructions upon request.", "min_deposit": "1000.00", "max_deposit": "1000000.00", "min_withdraw": "500.00", "max_withdraw": "500000.00"},
+                {"name": "Bitcoin", "code": "btc", "status": "ON", "wallet_address": "", "instructions": "Transfer Bitcoin to official wallet address.", "min_deposit": "100.00", "max_deposit": "100000.00", "min_withdraw": "10.00", "max_withdraw": "50000.00"},
+                {"name": "USDT TRC20", "code": "usdt_trc20", "status": "ON", "wallet_address": "", "instructions": "Send exact amount in USDT TRC20 network.", "min_deposit": "50.00", "max_deposit": "500000.00", "min_withdraw": "10.00", "max_withdraw": "100000.00"},
+                {"name": "USDT ERC20", "code": "usdt_erc20", "status": "ON", "wallet_address": "", "instructions": "Send USDT via Ethereum ERC20.", "min_deposit": "100.00", "max_deposit": "500000.00", "min_withdraw": "20.00", "max_withdraw": "100000.00"},
+                {"name": "Ethereum", "code": "eth", "status": "ON", "wallet_address": "", "instructions": "Transfer ETH to platform ETH wallet.", "min_deposit": "100.00", "max_deposit": "200000.00", "min_withdraw": "15.00", "max_withdraw": "50000.00"},
+                {"name": "BNB", "code": "bnb", "status": "ON", "wallet_address": "", "instructions": "Transfer BNB (BEP20 network).", "min_deposit": "50.00", "max_deposit": "100000.00", "min_withdraw": "10.00", "max_withdraw": "50000.00"},
+                {"name": "PerfectMoney", "code": "pm", "status": "OFF", "wallet_address": "", "instructions": "Automatic gateway deposit.", "min_deposit": "10.00", "max_deposit": "10000.00", "min_withdraw": "5.00", "max_withdraw": "5000.00"},
+                {"name": "Payeer", "code": "payeer", "status": "OFF", "wallet_address": "", "instructions": "Payeer instant deposit.", "min_deposit": "10.00", "max_deposit": "10000.00", "min_withdraw": "5.00", "max_withdraw": "5000.00"},
+                {"name": "Bank Wire", "code": "wire", "status": "OFF", "wallet_address": "", "instructions": "Bank transfer instructions upon request.", "min_deposit": "1000.00", "max_deposit": "1000000.00", "min_withdraw": "500.00", "max_withdraw": "500000.00"},
             ]
             for item in defaults:
                 ProcessingGateway.objects.create(**item)
@@ -504,6 +503,7 @@ class AdminProcessingsView(APIView):
             "name": g.name,
             "code": g.code,
             "status": g.status,
+            "wallet_address": g.wallet_address or "",
             "instructions": g.instructions or "",
             "min_deposit": str(g.min_deposit),
             "max_deposit": str(g.max_deposit),
@@ -517,11 +517,13 @@ class AdminProcessingsView(APIView):
             data = request.data
             name = data.get('name', 'Custom Gateway')
             code = data.get('code') or name.lower().replace(' ', '_')
-            
+            wallet_addr = data.get('wallet_address') if 'wallet_address' in data else data.get('walletAddress', '')
+
             gateway = ProcessingGateway.objects.create(
                 name=name,
                 code=code,
                 status=str(data.get('status', 'ON')).upper(),
+                wallet_address=wallet_addr or '',
                 instructions=data.get('instructions', ''),
                 min_deposit=data.get('min_deposit') or data.get('minDeposit') or 0.00,
                 max_deposit=data.get('max_deposit') or data.get('maxDeposit') or 0.00,
@@ -529,9 +531,10 @@ class AdminProcessingsView(APIView):
                 max_withdraw=data.get('max_withdraw') or data.get('maxWithdraw') or 0.00,
             )
             return Response({
-                "success": True, 
+                "success": True,
                 "message": "Processing gateway created successfully!",
-                "id": gateway.id
+                "id": gateway.id,
+                "wallet_address": gateway.wallet_address or "",
             }, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({"success": False, "error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -539,40 +542,47 @@ class AdminProcessingsView(APIView):
     def put(self, request, pk=None, *args, **kwargs):
         if not pk:
             return Response({"error": "Gateway ID required"}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         try:
             gateway = ProcessingGateway.objects.get(pk=pk)
             data = request.data
-            
+
             if 'name' in data and data['name']:
                 gateway.name = data['name']
             if 'code' in data and data['code']:
                 gateway.code = data['code']
             if 'status' in data:
                 gateway.status = str(data['status']).upper()
+            if 'wallet_address' in data:
+                gateway.wallet_address = data['wallet_address'] or ''
+            elif 'walletAddress' in data:
+                gateway.wallet_address = data['walletAddress'] or ''
             if 'instructions' in data:
                 gateway.instructions = data['instructions']
 
-            # Limit attributes (supporting camelCase and snake_case)
-            min_dep = data.get('min_deposit') or data.get('minDeposit')
+            min_dep = data.get('min_deposit') if data.get('min_deposit') is not None else data.get('minDeposit')
             if min_dep is not None:
                 gateway.min_deposit = min_dep
 
-            max_dep = data.get('max_deposit') or data.get('maxDeposit')
+            max_dep = data.get('max_deposit') if data.get('max_deposit') is not None else data.get('maxDeposit')
             if max_dep is not None:
                 gateway.max_deposit = max_dep
 
-            min_wth = data.get('min_withdraw') or data.get('minWithdraw')
+            min_wth = data.get('min_withdraw') if data.get('min_withdraw') is not None else data.get('minWithdraw')
             if min_wth is not None:
                 gateway.min_withdraw = min_wth
 
-            max_wth = data.get('max_withdraw') or data.get('maxWithdraw')
+            max_wth = data.get('max_withdraw') if data.get('max_withdraw') is not None else data.get('maxWithdraw')
             if max_wth is not None:
                 gateway.max_withdraw = max_wth
-                
+
             gateway.save()
-            return Response({"success": True, "message": "Processing gateway updated successfully!"}, status=status.HTTP_200_OK)
-            
+            return Response({
+                "success": True,
+                "message": "Processing gateway updated successfully!",
+                "wallet_address": gateway.wallet_address or "",
+            }, status=status.HTTP_200_OK)
+
         except ProcessingGateway.DoesNotExist:
             return Response({"error": f"Gateway with ID {pk} not found"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:

@@ -25,6 +25,7 @@ from .views import (
     UserWithdrawalCreateView,
     UserTransactionListView,
     UserWithdrawalsView,
+    UserProcessingsListView
 )
 
 urlpatterns = [
@@ -65,4 +66,9 @@ urlpatterns = [
     path('admin/withdrawals/<int:pk>/', AdminWithdrawalDetailView.as_view(), name='admin-withdrawal-detail'),
     path('admin/withdrawals/<int:pk>/process/', AdminProcessWithdrawalView.as_view(), name='admin-process-withdrawal'),
     path('admin/settings/', AdminSystemSettingsView.as_view(), name='admin-system-settings'),
+
+    # User-facing endpoints
+    path('plans/', InvestmentPlanListView.as_view(), name='investment-plans'),
+    path('processings/', UserProcessingsListView.as_view(), name='user-processings'),
+    path('deposit/', UserDepositCreateView.as_view(), name='user-deposit'),
 ]
