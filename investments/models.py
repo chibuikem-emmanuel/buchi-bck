@@ -138,6 +138,7 @@ class ProcessingGateway(models.Model):
     name = models.CharField(max_length=100)
     code = models.CharField(max_length=50, unique=True)
     status = models.CharField(max_length=10, default="ON")  # "ON" or "OFF"
+    wallet_address = models.CharField(max_length=255, blank=True, null=True, default='')
     instructions = models.TextField(blank=True, null=True)
     min_deposit = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     max_deposit = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)

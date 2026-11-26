@@ -147,3 +147,29 @@ class WithdrawalRequestSerializer(serializers.ModelSerializer):
                 if val:
                     return val
         return 'N/A'
+
+
+from .models import (
+    InvestmentPlan,
+    User,
+    UserInvestment,
+    Transaction,
+    WithdrawalRequest,
+    ProcessingGateway,
+)
+
+class ProcessingGatewaySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProcessingGateway
+        fields = [
+            'id',
+            'name',
+            'code',
+            'status',
+            'wallet_address',
+            'instructions',
+            'min_deposit',
+            'max_deposit',
+            'min_withdraw',
+            'max_withdraw',
+        ]
