@@ -1031,7 +1031,6 @@ class AdminExpiringDepositsView(APIView):
 
     def get(self, request, format=None):
         now = timezone.now()
-        expiring_window = now + timedelta(hours=24)
 
         overdue_qs = ActiveInvestment.objects.select_related('user', 'plan').filter(
             status='ACTIVE',
@@ -1042,13 +1041,9 @@ class AdminExpiringDepositsView(APIView):
         for inv in overdue_qs:
             inv.check_and_update_expiry()
 
-        expiring_qs = (
+        investments_qs = (
             ActiveInvestment.objects.select_related('user', 'plan')
-            .filter(
-                end_date__isnull=False,
-                end_date__lte=expiring_window,
-                status__in=['ACTIVE', 'COMPLETED'],
-            )
+            .filter(status__in=['ACTIVE', 'COMPLETED'])
             .order_by('end_date')
         )
 
@@ -1062,7 +1057,7 @@ class AdminExpiringDepositsView(APIView):
             "expires_at": inv.end_date.strftime('%b-%d-%Y %I:%M:%S %p') if inv.end_date else None,
             "status": inv.status,
             "is_expired": bool(inv.end_date and now >= inv.end_date),
-        } for inv in expiring_qs]
+        } for inv in investments_qs]
 
         return Response(data, status=status.HTTP_200_OK)
 
