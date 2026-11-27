@@ -14,6 +14,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.db.models import Sum, Count
 from django.db.models.deletion import ProtectedError
+import logging
 # Assuming you have models named InvestmentPlan and UserDeposit/Deposit defined:
 from crystals_core.notifications import send_user_email
 
@@ -1026,40 +1027,64 @@ class AdminWithdrawalDetailView(generics.RetrieveAPIView):
 #     serializer_class = DepositRequestSerializer
 
 
+logger = logging.getLogger(__name__)
+
+
+def _to_aware(dt):
+    if dt is None:
+        return None
+    if timezone.is_naive(dt):
+        return timezone.make_aware(dt, timezone.get_current_timezone())
+    return dt
+
+
 class AdminExpiringDepositsView(APIView):
     permission_classes = [permissions.IsAdminUser]
 
     def get(self, request, format=None):
         now = timezone.now()
 
-        overdue_qs = ActiveInvestment.objects.select_related('user', 'plan').filter(
-            status='ACTIVE',
-            is_completed=False,
-            end_date__isnull=False,
-            end_date__lte=now,
-        )
-        for inv in overdue_qs:
-            inv.check_and_update_expiry()
+        try:
+            overdue_qs = ActiveInvestment.objects.select_related('user', 'plan').filter(
+                status='ACTIVE',
+                is_completed=False,
+                end_date__isnull=False,
+            )
+            for inv in overdue_qs:
+                end_dt = _to_aware(inv.end_date)
+                if end_dt and now >= end_dt:
+                    inv.check_and_update_expiry()
 
-        investments_qs = (
-            ActiveInvestment.objects.select_related('user', 'plan')
-            .filter(status__in=['ACTIVE', 'COMPLETED'])
-            .order_by('end_date')
-        )
+            investments_qs = (
+                ActiveInvestment.objects.select_related('user', 'plan')
+                .filter(status__in=['ACTIVE', 'COMPLETED'])
+                .order_by('end_date')
+            )
 
-        data = [{
-            "id": inv.id,
-            "username": inv.user.username if inv.user else "Unknown",
-            "plan_name": inv.plan.name if inv.plan else "Investment Plan",
-            "amount": str(inv.amount),
-            "duration_days": inv.duration_days,
-            "start_date": inv.start_date.strftime('%Y-%m-%d %H:%M') if inv.start_date else None,
-            "expires_at": inv.end_date.strftime('%b-%d-%Y %I:%M:%S %p') if inv.end_date else None,
-            "status": inv.status,
-            "is_expired": bool(inv.end_date and now >= inv.end_date),
-        } for inv in investments_qs]
+            data = []
+            for inv in investments_qs:
+                start_dt = _to_aware(inv.start_date)
+                end_dt = _to_aware(inv.end_date)
+                data.append({
+                    "id": inv.id,
+                    "username": inv.user.username if inv.user else "Unknown",
+                    "plan_name": inv.plan.name if inv.plan else "Investment Plan",
+                    "amount": str(inv.amount or 0),
+                    "duration_days": inv.duration_days,
+                    "start_date": start_dt.strftime('%Y-%m-%d %H:%M') if start_dt else None,
+                    "expires_at": end_dt.strftime('%b-%d-%Y %I:%M:%S %p') if end_dt else None,
+                    "status": inv.status,
+                    "is_expired": bool(end_dt and now >= end_dt),
+                })
 
-        return Response(data, status=status.HTTP_200_OK)
+            return Response(data, status=status.HTTP_200_OK)
+
+        except Exception as exc:
+            logger.exception("AdminExpiringDepositsView failed: %s", exc)
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 class AdminReleaseInvestmentView(APIView):

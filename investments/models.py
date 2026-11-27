@@ -176,6 +176,14 @@ class Withdrawal(models.Model):
 
 
 
+def _normalize_dt(dt):
+    if dt is None:
+        return None
+    if timezone.is_naive(dt):
+        return timezone.make_aware(dt, timezone.get_current_timezone())
+    return dt
+
+
 class ActiveInvestment(models.Model):
     STATUS_CHOICES = (
         ('ACTIVE', 'ACTIVE'),
@@ -201,47 +209,56 @@ class ActiveInvestment(models.Model):
         return f"{self.user.username} - ${self.amount} ({self.status})"
 
     def calculate_accumulated_profit(self):
-        if not self.start_date:
+        start_dt = _normalize_dt(self.start_date)
+        if not start_dt:
             return Decimal('0.00')
 
         now = timezone.now()
-        effective_end = min(now, self.end_date) if self.end_date else now
-        if effective_end <= self.start_date:
+        end_dt = _normalize_dt(self.end_date)
+        effective_end = min(now, end_dt) if end_dt else now
+        if effective_end <= start_dt:
             return Decimal('0.00')
 
-        total_seconds = Decimal(str((effective_end - self.start_date).total_seconds()))
+        total_seconds = Decimal(str((effective_end - start_dt).total_seconds()))
         days_elapsed = min(
             total_seconds / Decimal('86400'),
             Decimal(str(max(self.duration_days or 0, 0)))
         )
 
-        daily_profit = self.amount * (self.daily_profit_percentage / Decimal('100.00'))
+        amt = Decimal(str(self.amount or '0.00'))
+        pct = Decimal(str(self.daily_profit_percentage or '0.00'))
+        daily_profit = amt * (pct / Decimal('100.00'))
         return (daily_profit * days_elapsed).quantize(Decimal('0.01'))
 
     def check_and_update_expiry(self):
-        if self.status == 'ACTIVE' and not self.is_completed and self.end_date:
-            if timezone.now() >= self.end_date:
+        end_dt = _normalize_dt(self.end_date)
+        if self.status == 'ACTIVE' and not self.is_completed and end_dt:
+            if timezone.now() >= end_dt:
                 with transaction.atomic():
-                    inv = ActiveInvestment.objects.select_for_update().get(pk=self.pk)
+                    inv = ActiveInvestment.objects.select_for_update().select_related('user').get(pk=self.pk)
+                    inv_end = _normalize_dt(inv.end_date)
                     if (
                         inv.status == 'ACTIVE'
                         and not inv.is_completed
-                        and inv.end_date
-                        and timezone.now() >= inv.end_date
+                        and inv_end
+                        and timezone.now() >= inv_end
                     ):
+                        locked_user = User.objects.select_for_update().get(pk=inv.user_id)
+                        release_amount = Decimal(str(inv.amount or '0.00'))
+
                         inv.status = 'COMPLETED'
                         inv.is_completed = True
                         inv.save(update_fields=['status', 'is_completed'])
 
-                        inv.user.balance = (inv.user.balance or Decimal('0.00')) + inv.amount
-                        inv.user.save(update_fields=['balance'])
+                        locked_user.balance = Decimal(str(locked_user.balance or '0.00')) + release_amount
+                        locked_user.save(update_fields=['balance'])
 
                         Transaction.objects.create(
-                            user=inv.user,
+                            user=locked_user,
                             transaction_type='PRINCIPAL_RELEASE',
-                            amount=inv.amount,
+                            amount=release_amount,
                             status='APPROVED',
-                            transaction_id=f"REL-{inv.id}-{timezone.now().strftime('%Y%m%d%H%M%S')}"
+                            transaction_id=f"REL-{inv.id}-{timezone.now().strftime('%Y%m%d%H%M%S%f')}"
                         )
                         self.refresh_from_db()
 
@@ -250,7 +267,8 @@ class ActiveInvestment(models.Model):
             self.start_date = timezone.now()
         if not self.end_date:
             days = int(self.duration_days if self.duration_days is not None else 3)
-            self.end_date = self.start_date + timedelta(days=days)
+            start_dt = _normalize_dt(self.start_date)
+            self.end_date = start_dt + timedelta(days=days)
         super().save(*args, **kwargs)
 
 
